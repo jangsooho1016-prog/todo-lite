@@ -49,7 +49,7 @@ todolist/
 
 - 핵심 원칙: `todo-core`는 Tauri를 모른다. Tauri 커맨드는 코어 함수를 호출만 한다.
 - 확장 지점이 되는 trait
-  - `TaskParser { fn parse(&self, input: &str, now: DateTime<Local>) -> ParsedTask }`
+  - `TaskParser { fn parse(&self, input: &str, now: NaiveDateTime) -> ParsedTask }`
     - 이후 `ClaudeParser`나 `LocalLlmParser`를 추가하고, 실패하면 규칙 기반으로 폴백한다.
   - `TaskStore`: 저장소 교체 가능
 
@@ -68,6 +68,7 @@ todolist/
 | `tags` | Vec<String> | |
 | `completed_at` | Option<DateTime> | |
 | `created_at`, `updated_at` | DateTime (UTC) | |
+| `updated_by` | String | 마지막으로 수정한 기기 ID (동기화 tie-break용) |
 | `deleted` | bool | 동기화를 위한 삭제 표시 |
 
 ## 6. 기능 요구사항 (MVP)
