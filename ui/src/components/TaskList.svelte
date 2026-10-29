@@ -29,7 +29,7 @@
 
   {#if app.view !== 'completed' || app.searching}
     {#if app.doneTasks.length > 0}
-      <button class="done-toggle" onclick={() => (app.doneOpen = !app.doneOpen)}>
+      <button class="done-toggle" onclick={() => app.toggleDoneOpen()}>
         {app.doneOpen ? '▾' : '▸'} 완료 {app.doneTasks.length}개
       </button>
       {#if app.doneOpen}

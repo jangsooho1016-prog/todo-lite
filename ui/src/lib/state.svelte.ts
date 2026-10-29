@@ -44,6 +44,7 @@ class AppState {
   );
 
   private refreshSeq = 0;
+  private resync = false;
   private syncTimer: ReturnType<typeof setTimeout> | undefined;
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private undoTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,9 +80,16 @@ class AppState {
       if (seq !== this.refreshSeq) return; // 더 최근 요청이 있으면 버린다
       this.tasks = tasks;
       this.tags = tags;
-      if (this.selectedId && !tasks.some((t) => t.id === this.selectedId)) this.selectedId = null;
+      if (this.selectedId && !this.navTasks.some((t) => t.id === this.selectedId)) this.selectedId = null;
     } catch (e) {
       this.fail(e);
+    }
+  }
+
+  toggleDoneOpen() {
+    this.doneOpen = !this.doneOpen;
+    if (!this.doneOpen && this.selectedId && !this.navTasks.some((t) => t.id === this.selectedId)) {
+      this.selectedId = null;
     }
   }
 
@@ -204,7 +212,11 @@ class AppState {
   }
 
   async runSync() {
-    if (!this.syncFolder || this.syncing) return;
+    if (!this.syncFolder) return;
+    if (this.syncing) {
+      this.resync = true; // 진행 중인 동기화가 끝나면 한 번 더 돌린다
+      return;
+    }
     this.syncing = true;
     try {
       const status = await api.syncNow();
@@ -216,6 +228,10 @@ class AppState {
       this.syncMessage = `동기화 실패: ${errorText(e)}`;
     } finally {
       this.syncing = false;
+      if (this.resync) {
+        this.resync = false;
+        void this.runSync();
+      }
     }
   }
 
