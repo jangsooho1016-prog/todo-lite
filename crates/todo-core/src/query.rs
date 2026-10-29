@@ -27,7 +27,11 @@ pub struct Filter<'a> {
 
 impl<'a> Filter<'a> {
     pub fn view(view: View) -> Self {
-        Filter { view, tag: None, search: None }
+        Filter {
+            view,
+            tag: None,
+            search: None,
+        }
     }
 }
 
@@ -74,7 +78,10 @@ pub fn all_tags(tasks: &[Task]) -> Vec<TagCount> {
     }
     let mut out: Vec<TagCount> = counts
         .into_iter()
-        .map(|(name, count)| TagCount { name: name.to_string(), count })
+        .map(|(name, count)| TagCount {
+            name: name.to_string(),
+            count,
+        })
         .collect();
     out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
     out
@@ -95,19 +102,27 @@ fn is_overdue(t: &Task, now: NaiveDateTime) -> bool {
     match t.due_date {
         None => false,
         Some(d) => {
-            d < now.date()
-                || (d == now.date() && t.due_time.is_some_and(|tm| tm < now.time()))
+            d < now.date() || (d == now.date() && t.due_time.is_some_and(|tm| tm < now.time()))
         }
     }
 }
 
 fn matches_search(t: &Task, needle: &str) -> bool {
     t.title.to_lowercase().contains(needle)
-        || t.notes.as_ref().is_some_and(|n| n.to_lowercase().contains(needle))
+        || t.notes
+            .as_ref()
+            .is_some_and(|n| n.to_lowercase().contains(needle))
         || t.tags.iter().any(|tag| tag.to_lowercase().contains(needle))
 }
 
-type SortKey = (bool, Option<NaiveDate>, bool, Option<NaiveTime>, u8, DateTime<Utc>);
+type SortKey = (
+    bool,
+    Option<NaiveDate>,
+    bool,
+    Option<NaiveTime>,
+    u8,
+    DateTime<Utc>,
+);
 
 /// 마감일 있는 것 먼저(빠른 날짜 순) → 같은 날은 시각 있는 것 먼저(빠른 시각 순)
 /// → 우선순위 높은 순 → 먼저 만든 순. `Option`은 `None`이 작으므로 bool 플래그로 뒤로 보낸다.
@@ -157,9 +172,30 @@ mod tests {
     fn fixture() -> Vec<Task> {
         use Priority::*;
         vec![
-            task("지난 일", Some("2026-10-27"), None, Normal, &["학교"], false),
-            task("오늘 아침", Some("2026-10-28"), Some("09:00"), Normal, &[], false),
-            task("오늘 저녁", Some("2026-10-28"), Some("19:00"), High, &["개인"], false),
+            task(
+                "지난 일",
+                Some("2026-10-27"),
+                None,
+                Normal,
+                &["학교"],
+                false,
+            ),
+            task(
+                "오늘 아침",
+                Some("2026-10-28"),
+                Some("09:00"),
+                Normal,
+                &[],
+                false,
+            ),
+            task(
+                "오늘 저녁",
+                Some("2026-10-28"),
+                Some("19:00"),
+                High,
+                &["개인"],
+                false,
+            ),
             task("오늘 종일", Some("2026-10-28"), None, Low, &[], false),
             task("내일", Some("2026-10-29"), None, Normal, &["학교"], false),
             task("언젠가", None, None, Normal, &[], false),
@@ -174,7 +210,10 @@ mod tests {
     #[test]
     fn today_view_includes_overdue_and_excludes_done_and_undated() {
         let got = select(&fixture(), &Filter::view(View::Today), now());
-        assert_eq!(titles(&got), ["지난 일", "오늘 아침", "오늘 저녁", "오늘 종일"]);
+        assert_eq!(
+            titles(&got),
+            ["지난 일", "오늘 아침", "오늘 저녁", "오늘 종일"]
+        );
     }
 
     #[test]
@@ -210,7 +249,14 @@ mod tests {
             task("낮음", Some("2026-10-30"), None, Low, &[], false),
             task("높음", Some("2026-10-30"), None, High, &[], false),
             task("보통", Some("2026-10-30"), None, Normal, &[], false),
-            task("시각 있음", Some("2026-10-30"), Some("08:00"), Low, &[], false),
+            task(
+                "시각 있음",
+                Some("2026-10-30"),
+                Some("08:00"),
+                Low,
+                &[],
+                false,
+            ),
         ];
         let got = select(&tasks, &Filter::view(View::All), now());
         assert_eq!(titles(&got), ["시각 있음", "높음", "보통", "낮음"]);
@@ -226,7 +272,11 @@ mod tests {
 
     #[test]
     fn tag_filter_matches_exact_tag() {
-        let filter = Filter { view: View::All, tag: Some("학교"), search: None };
+        let filter = Filter {
+            view: View::All,
+            tag: Some("학교"),
+            search: None,
+        };
         let got = select(&fixture(), &filter, now());
         assert_eq!(titles(&got), ["지난 일", "끝난 일", "내일"]);
     }
@@ -237,19 +287,35 @@ mod tests {
         tasks[5].notes = Some("Call ABC Corp".into());
         tasks[4].tags.push("Project".into());
 
-        let by_title = Filter { view: View::All, tag: None, search: Some("저녁") };
+        let by_title = Filter {
+            view: View::All,
+            tag: None,
+            search: Some("저녁"),
+        };
         assert_eq!(titles(&select(&tasks, &by_title, now())), ["오늘 저녁"]);
 
-        let by_notes = Filter { view: View::All, tag: None, search: Some("abc corp") };
+        let by_notes = Filter {
+            view: View::All,
+            tag: None,
+            search: Some("abc corp"),
+        };
         assert_eq!(titles(&select(&tasks, &by_notes, now())), ["언젠가"]);
 
-        let by_tag = Filter { view: View::All, tag: None, search: Some("PROJECT") };
+        let by_tag = Filter {
+            view: View::All,
+            tag: None,
+            search: Some("PROJECT"),
+        };
         assert_eq!(titles(&select(&tasks, &by_tag, now())), ["내일"]);
     }
 
     #[test]
     fn blank_search_is_ignored() {
-        let filter = Filter { view: View::All, tag: None, search: Some("  ") };
+        let filter = Filter {
+            view: View::All,
+            tag: None,
+            search: Some("  "),
+        };
         // 공백만 있는 검색어는 "필터 없음"과 같아야 한다.
         assert_eq!(select(&fixture(), &filter, now()).len(), 7);
     }
@@ -260,8 +326,14 @@ mod tests {
         assert_eq!(
             got,
             vec![
-                TagCount { name: "학교".into(), count: 2 },
-                TagCount { name: "개인".into(), count: 1 },
+                TagCount {
+                    name: "학교".into(),
+                    count: 2
+                },
+                TagCount {
+                    name: "개인".into(),
+                    count: 1
+                },
             ]
         );
     }

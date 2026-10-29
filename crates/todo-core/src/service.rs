@@ -29,7 +29,11 @@ pub struct TodoService<S: TaskStore, P: TaskParser> {
 
 impl<S: TaskStore, P: TaskParser> TodoService<S, P> {
     pub fn new(store: S, parser: P, device_id: String) -> Self {
-        TodoService { store, parser, device_id }
+        TodoService {
+            store,
+            parser,
+            device_id,
+        }
     }
 
     pub fn store(&self) -> &S {
@@ -244,7 +248,12 @@ mod tests {
         let svc = svc();
         svc.add_from_input("a #학교", at(9)).unwrap();
         svc.add_from_input("b #학교 #개인", at(9)).unwrap();
-        let names: Vec<_> = svc.tags().unwrap().into_iter().map(|t| (t.name, t.count)).collect();
+        let names: Vec<_> = svc
+            .tags()
+            .unwrap()
+            .into_iter()
+            .map(|t| (t.name, t.count))
+            .collect();
         assert_eq!(names, [("학교".to_string(), 2), ("개인".to_string(), 1)]);
     }
 }

@@ -121,10 +121,7 @@ impl SyncEngine {
             file.read_to_end(&mut buf)?;
 
             // 개행으로 끝난 완전한 줄까지만 소비한다. 업로드 중인 잘린 줄은 다음에 읽는다.
-            let consumed = buf
-                .iter()
-                .rposition(|&b| b == b'\n')
-                .map_or(0, |i| i + 1);
+            let consumed = buf.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
 
             for line in buf[..consumed].split(|&b| b == b'\n') {
                 if line.iter().all(u8::is_ascii_whitespace) {
@@ -215,13 +212,23 @@ mod tests {
     fn task_added_on_one_device_appears_on_the_other() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (svc("pc"), svc("phone"));
-        let (ea, eb) = (SyncEngine::new("pc", dir.path()), SyncEngine::new("phone", dir.path()));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
 
         a.add_from_input("내일 회의 #학교", at(9)).unwrap();
         assert_eq!(ea.export(a.store()).unwrap(), 1);
 
         let report = eb.import(b.store()).unwrap();
-        assert_eq!(report, ImportReport { applied: 1, skipped: 0, corrupt_lines: 0 });
+        assert_eq!(
+            report,
+            ImportReport {
+                applied: 1,
+                skipped: 0,
+                corrupt_lines: 0
+            }
+        );
         let got = all(&b);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].title, "회의");
@@ -232,7 +239,10 @@ mod tests {
     fn export_is_incremental_and_import_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (svc("pc"), svc("phone"));
-        let (ea, eb) = (SyncEngine::new("pc", dir.path()), SyncEngine::new("phone", dir.path()));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
 
         a.add_from_input("첫째", at(9)).unwrap();
         assert_eq!(ea.export(a.store()).unwrap(), 1);
@@ -251,7 +261,10 @@ mod tests {
     fn last_write_wins_and_both_devices_converge() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (svc("pc"), svc("phone"));
-        let (ea, eb) = (SyncEngine::new("pc", dir.path()), SyncEngine::new("phone", dir.path()));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
 
         let task = a.add_from_input("원본", at(9)).unwrap();
         ea.export(a.store()).unwrap();
@@ -272,7 +285,10 @@ mod tests {
     fn identical_timestamps_are_broken_by_device_id_on_both_sides() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (svc("pc"), svc("phone"));
-        let (ea, eb) = (SyncEngine::new("pc", dir.path()), SyncEngine::new("phone", dir.path()));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
 
         let task = a.add_from_input("원본", at(9)).unwrap();
         ea.export(a.store()).unwrap();
@@ -294,7 +310,10 @@ mod tests {
     fn deletion_propagates() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (svc("pc"), svc("phone"));
-        let (ea, eb) = (SyncEngine::new("pc", dir.path()), SyncEngine::new("phone", dir.path()));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
 
         let task = a.add_from_input("지울 것", at(9)).unwrap();
         ea.export(a.store()).unwrap();
@@ -311,7 +330,10 @@ mod tests {
     fn imported_tasks_are_not_echoed_back_on_export() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (svc("pc"), svc("phone"));
-        let (ea, eb) = (SyncEngine::new("pc", dir.path()), SyncEngine::new("phone", dir.path()));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
 
         a.add_from_input("pc에서 만듦", at(9)).unwrap();
         ea.export(a.store()).unwrap();
@@ -335,8 +357,17 @@ mod tests {
         .unwrap();
 
         let b = svc("phone");
-        let report = SyncEngine::new("phone", dir.path()).import(b.store()).unwrap();
-        assert_eq!(report, ImportReport { applied: 1, skipped: 0, corrupt_lines: 1 });
+        let report = SyncEngine::new("phone", dir.path())
+            .import(b.store())
+            .unwrap();
+        assert_eq!(
+            report,
+            ImportReport {
+                applied: 1,
+                skipped: 0,
+                corrupt_lines: 1
+            }
+        );
         assert_eq!(all(&b).len(), 1);
     }
 
@@ -347,7 +378,12 @@ mod tests {
         a.add_from_input("정상", at(9)).unwrap();
         SyncEngine::new("pc", src.path()).export(a.store()).unwrap();
         let good = std::fs::read_to_string(src.path().join("pc.jsonl")).unwrap();
-        let (head, tail) = good.trim_end().split_at(good.len() / 2);
+        let body = good.trim_end();
+        let mut mid = body.len() / 2;
+        while !body.is_char_boundary(mid) {
+            mid -= 1;
+        }
+        let (head, tail) = body.split_at(mid);
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("other.jsonl");
