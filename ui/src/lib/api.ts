@@ -12,5 +12,5 @@ export const api = {
   syncFolder: () => invoke<string | null>('get_sync_folder'),
   setSyncFolder: (folder: string | null) => invoke<void>('set_sync_folder', { folder }),
   syncNow: () => invoke<SyncStatus>('sync_now'),
-  ready: () => invoke<void>('report_ready'),
+  ready: (marks: Record<string, number>) => invoke<void>('report_ready', { marks }),
 };

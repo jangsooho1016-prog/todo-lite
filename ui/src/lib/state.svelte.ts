@@ -1,4 +1,5 @@
 import { api } from './api';
+import { marks } from './marks';
 import { describeSync, errorText, nowParts } from './format';
 import type { TagCount, Task, TaskEdit, ViewName } from './types';
 
@@ -60,10 +61,13 @@ class AppState {
     } catch (e) {
       this.fail(e);
     }
+    marks.synced_folder = performance.now();
     await this.refresh();
+    marks.data = performance.now();
     void this.runSync();
     setInterval(() => void this.runSync(), SYNC_INTERVAL_MS);
-    void api.ready().catch(() => {});
+    marks.ready = performance.now();
+    void api.ready(marks).catch(() => {});
   }
 
   async refresh() {

@@ -59,8 +59,15 @@ pub fn sync_now(api: State<'_, Api>) -> Result<SyncStatus, ApiError> {
 
 /// 첫 화면이 그려진 뒤 프론트엔드가 부른다. 시작 시간 측정용.
 #[tauri::command]
-pub fn report_ready(startup: State<'_, Startup>) {
+pub fn report_ready(startup: State<'_, Startup>, marks: Option<serde_json::Value>) {
     if std::env::var_os("TODO_LITE_TIMING").is_some() {
-        eprintln!("ready_ms={}", startup.0.elapsed().as_millis());
+        let epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        let marks = marks.map_or_else(|| "null".to_string(), |m| m.to_string());
+        eprintln!(
+            "js_marks={marks} ready_epoch_ms={epoch} ready_ms={}",
+            startup.0.elapsed().as_millis()
+        );
     }
 }
