@@ -9,6 +9,11 @@ use crate::model::{normalize_tags, Priority};
 /// 날짜·시각 표현 뒤에 붙는 조사. 함께 소비한다. ("내일까지", "3시에")
 const SUFFIX: &str = "(?:까지|부터|에)?";
 
+/// 표현 앞 경계. 공백 하나를 함께 소비한다. (regex 크레이트는 lookbehind가 없다)
+const START: &str = r"(?:^|\s)";
+/// 표현 뒤 경계. 공백/구두점 하나를 함께 소비한다. (regex 크레이트는 lookahead가 없다)
+const END: &str = r"(?:\s|$|[,.;:!?)])";
+
 pub struct RuleBasedParser {
     tag: Regex,
     priority: Regex,
@@ -33,21 +38,22 @@ impl Default for RuleBasedParser {
 impl RuleBasedParser {
     pub fn new() -> Self {
         RuleBasedParser {
-            tag: re(r"#(\S+)"),
+            tag: re(r"#([^\s,.;:!?()]+)[,.;:!?)]*"),
             priority: re(r"!(?:(높음|중요|낮음)|!)"),
             iso_date: re(&format!(r"(\d{{4}})-(\d{{1,2}})-(\d{{1,2}}){SUFFIX}")),
             month_day: re(&format!(r"(\d{{1,2}})월\s*(\d{{1,2}})일{SUFFIX}")),
-            slash_date: re(&format!(r"(\d{{1,2}})/(\d{{1,2}}){SUFFIX}")),
-            days_later: re(&format!(r"(\d+)일\s*(?:후|뒤){SUFFIX}")),
+            // 알려진 한계: "우유 1/2 통"의 1/2는 1월 2일과 구별할 수 없어 날짜로 해석된다.
+            slash_date: re(&format!(r"{START}(\d{{1,2}})/(\d{{1,2}}){SUFFIX}{END}")),
+            days_later: re(&format!(r"{START}(\d+)일\s*(?:후|뒤){SUFFIX}{END}")),
             week_weekday: re(&format!(
-                r"(이번|다음)\s*주\s*(월|화|수|목|금|토|일)요일{SUFFIX}"
+                r"{START}(이번|다음)\s*주\s*(월|화|수|목|금|토|일)요일{SUFFIX}{END}"
             )),
-            next_week: re(&format!(r"다음\s*주{SUFFIX}")),
-            day_word: re(&format!(r"(오늘|내일|모레|글피){SUFFIX}")),
+            next_week: re(&format!(r"{START}다음\s*주{SUFFIX}{END}")),
+            day_word: re(&format!(r"{START}(오늘|내일|모레|글피){SUFFIX}{END}")),
             hour_minute: re(&format!(r"(\d{{1,2}}):(\d{{2}}){SUFFIX}")),
             // 그룹: 1 오전/오후 접두어, 2 시, 3 "간"(시간 duration이면 거부), 4 "반", 5 분
             clock: re(&format!(
-                r"(오전|오후|아침|저녁|밤|새벽)?\s*(\d{{1,2}})시(간)?\s*(?:(반)|(\d{{1,2}})분)?{SUFFIX}"
+                r"(오전|오후|아침|저녁|밤|새벽)?\s*(\d{{1,2}})시(간)?\s*(?:(반)|(\d{{1,2}})분)?{SUFFIX}{END}"
             )),
             time_word: re(&format!(r"(아침|점심|저녁){SUFFIX}")),
         }
@@ -220,12 +226,10 @@ fn num<T: FromStr>(s: &str) -> Option<T> {
 
 /// 연도 없는 월/일을 해석한다. 올해 날짜가 오늘보다 앞서면 내년으로 본다.
 fn upcoming(today: NaiveDate, month: u32, day: u32) -> Option<NaiveDate> {
-    let this_year = NaiveDate::from_ymd_opt(today.year(), month, day)?;
-    if this_year >= today {
-        Some(this_year)
-    } else {
-        NaiveDate::from_ymd_opt(today.year() + 1, month, day)
-    }
+    // 윤일(2/29)은 최대 8년 뒤(세기 윤년 예외)까지 찾아본다.
+    (today.year()..=today.year() + 8)
+        .filter_map(|year| NaiveDate::from_ymd_opt(year, month, day))
+        .find(|date| *date >= today)
 }
 
 fn weekday_index(s: &str) -> Option<i64> {
@@ -435,6 +439,91 @@ mod tests {
         assert_eq!(p.due_time, hm(15, 0));
         assert_eq!(p.priority, Priority::High);
         assert_eq!(p.tags, ["학교"]);
+    }
+
+    #[test]
+    fn ban_requires_a_word_boundary() {
+        let p = parse("오후 3시 반납");
+        assert_eq!((p.due_time, p.title.as_str()), (hm(15, 0), "반납"));
+        let p = parse("3시 반찬 사기");
+        assert_eq!((p.due_time, p.title.as_str()), (hm(3, 0), "반찬 사기"));
+        let p = parse("오후 3시 반 미팅");
+        assert_eq!((p.due_time, p.title.as_str()), (hm(15, 30), "미팅"));
+        let p = parse("오후 3시에 치과");
+        assert_eq!((p.due_time, p.title.as_str()), (hm(15, 0), "치과"));
+        let p = parse("오후 3시 반에 만나");
+        assert_eq!((p.due_time, p.title.as_str()), (hm(15, 30), "만나"));
+        assert_eq!(time("오후 2시 30분 상담"), hm(14, 30));
+        assert_eq!(time("9시 30분 출근"), hm(9, 30));
+        let p = parse("25시 이상한 일정");
+        assert_eq!((p.due_time, p.title.as_str()), (None, "25시 이상한 일정"));
+        let p = parse("2시간 공부");
+        assert_eq!((p.due_time, p.title.as_str()), (None, "2시간 공부"));
+    }
+
+    #[test]
+    fn slash_dates_need_surrounding_boundaries() {
+        for input in ["https://example.com/1/2 확인", "1/2/3 메모", "v1/2x 점검"] {
+            let p = parse(input);
+            assert_eq!(p.due_date, None, "{input}");
+            assert_eq!(p.title, input);
+        }
+        assert_eq!(date("10/30 팀플"), d(2026, 10, 30));
+        let p = parse("마감 10/30");
+        assert_eq!((p.due_date, p.title.as_str()), (d(2026, 10, 30), "마감"));
+        let p = parse("10/30에 제출");
+        assert_eq!((p.due_date, p.title.as_str()), (d(2026, 10, 30), "제출"));
+    }
+
+    #[test]
+    fn day_words_need_boundaries() {
+        for input in ["내일배움카드 신청", "오늘의 할 일"] {
+            let p = parse(input);
+            assert_eq!(p.due_date, None, "{input}");
+            assert_eq!(p.title, input);
+        }
+        let p = parse("내일, 병원");
+        assert_eq!((p.due_date, p.title.as_str()), (d(2026, 10, 29), "병원"));
+        let p = parse("회의는 내일");
+        assert_eq!((p.due_date, p.title.as_str()), (d(2026, 10, 29), "회의는"));
+        let p = parse("회의록 정리 내일까지");
+        assert_eq!(
+            (p.due_date, p.title.as_str()),
+            (d(2026, 10, 29), "회의록 정리")
+        );
+        let p = parse("내일");
+        assert_eq!((p.due_date, p.title.as_str()), (d(2026, 10, 29), ""));
+        let p = parse("  내일   공백   많음  ");
+        assert_eq!(
+            (p.due_date, p.title.as_str()),
+            (d(2026, 10, 29), "공백 많음")
+        );
+    }
+
+    #[test]
+    fn feb_29_rolls_to_the_next_leap_year() {
+        let p = parse("2월 29일 생일");
+        assert_eq!((p.due_date, p.title.as_str()), (d(2028, 2, 29), "생일"));
+        assert_eq!(date("1월 5일 신년 계획"), d(2027, 1, 5));
+        assert_eq!(date("10월 28일 오늘 마감"), d(2026, 10, 28));
+        for input in ["2월 31일 없는 날", "13월 1일 없는 날"] {
+            let p = parse(input);
+            assert_eq!(p.due_date, None, "{input}");
+            assert_eq!(p.title, input);
+        }
+    }
+
+    #[test]
+    fn tag_trailing_punctuation_is_not_part_of_the_tag() {
+        for (input, title, tag) in [
+            ("메모 #학교, 확인", "메모 확인", "학교"),
+            ("#학교. 확인", "확인", "학교"),
+            ("끝 #집)", "끝", "집"),
+        ] {
+            let p = parse(input);
+            assert_eq!(p.tags, [tag], "{input}");
+            assert_eq!(p.title, title, "{input}");
+        }
     }
 
     type Case = (
@@ -770,6 +859,46 @@ mod tests {
             N,
             &[],
         ),
+        (
+            "오후 3시 반납",
+            "반납",
+            Some("2026-10-28"),
+            Some("15:00"),
+            N,
+            &[],
+        ),
+        (
+            "3시 반찬 사기",
+            "반찬 사기",
+            Some("2026-10-28"),
+            Some("03:00"),
+            N,
+            &[],
+        ),
+        (
+            "오후 3시 반에 만나",
+            "만나",
+            Some("2026-10-28"),
+            Some("15:30"),
+            N,
+            &[],
+        ),
+        (
+            "https://example.com/1/2 확인",
+            "https://example.com/1/2 확인",
+            None,
+            None,
+            N,
+            &[],
+        ),
+        ("1/2/3 메모", "1/2/3 메모", None, None, N, &[]),
+        ("내일배움카드 신청", "내일배움카드 신청", None, None, N, &[]),
+        ("오늘의 할 일", "오늘의 할 일", None, None, N, &[]),
+        ("내일, 병원", "병원", Some("2026-10-29"), None, N, &[]),
+        ("회의는 내일", "회의는", Some("2026-10-29"), None, N, &[]),
+        ("2월 29일 생일", "생일", Some("2028-02-29"), None, N, &[]),
+        ("메모 #학교, 확인", "메모 확인", None, None, N, &["학교"]),
+        ("끝 #집)", "끝", None, None, N, &["집"]),
     ];
 
     #[test]
