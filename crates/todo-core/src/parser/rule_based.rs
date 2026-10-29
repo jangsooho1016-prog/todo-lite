@@ -418,4 +418,108 @@ mod tests {
         assert_eq!(p.priority, Priority::High);
         assert_eq!(p.tags, ["학교"]);
     }
+
+    type Case = (
+        &'static str,         // 입력
+        &'static str,         // 기대 제목
+        Option<&'static str>, // 기대 날짜 YYYY-MM-DD
+        Option<&'static str>, // 기대 시각 HH:MM
+        Priority,
+        &'static [&'static str], // 기대 태그
+    );
+
+    const N: Priority = Priority::Normal;
+    const H: Priority = Priority::High;
+    const L: Priority = Priority::Low;
+
+    const CORPUS: &[Case] = &[
+        ("장보기", "장보기", None, None, N, &[]),
+        ("오늘 운동", "운동", Some("2026-10-28"), None, N, &[]),
+        ("내일 병원", "병원", Some("2026-10-29"), None, N, &[]),
+        ("모레 세미나", "세미나", Some("2026-10-30"), None, N, &[]),
+        ("글피 여행 준비", "여행 준비", Some("2026-10-31"), None, N, &[]),
+        ("3일 후 반납", "반납", Some("2026-10-31"), None, N, &[]),
+        ("5일 뒤 제출", "제출", Some("2026-11-02"), None, N, &[]),
+        ("다음 주 월요일 회의", "회의", Some("2026-11-02"), None, N, &[]),
+        ("이번 주 금요일 발표", "발표", Some("2026-10-30"), None, N, &[]),
+        ("다음 주 수요일 면접", "면접", Some("2026-11-04"), None, N, &[]),
+        ("이번 주 일요일 청소", "청소", Some("2026-11-01"), None, N, &[]),
+        ("다음 주 과제", "과제", Some("2026-11-02"), None, N, &[]),
+        ("10월 30일 과제 제출", "과제 제출", Some("2026-10-30"), None, N, &[]),
+        ("11월 3일 시험", "시험", Some("2026-11-03"), None, N, &[]),
+        ("1월 5일 신년 계획", "신년 계획", Some("2027-01-05"), None, N, &[]),
+        ("10/30 팀플", "팀플", Some("2026-10-30"), None, N, &[]),
+        ("2026-11-15 졸업 사진", "졸업 사진", Some("2026-11-15"), None, N, &[]),
+        ("12월 25일 선물 사기", "선물 사기", Some("2026-12-25"), None, N, &[]),
+        ("오후 3시 회의", "회의", Some("2026-10-28"), Some("15:00"), N, &[]),
+        ("오전 9시 운동", "운동", Some("2026-10-28"), Some("09:00"), N, &[]),
+        ("15:00 스터디", "스터디", Some("2026-10-28"), Some("15:00"), N, &[]),
+        ("오후 2시 30분 상담", "상담", Some("2026-10-28"), Some("14:30"), N, &[]),
+        ("오후 3시 반 미팅", "미팅", Some("2026-10-28"), Some("15:30"), N, &[]),
+        ("점심 약속", "약속", Some("2026-10-28"), Some("12:00"), N, &[]),
+        ("저녁 장보기", "장보기", Some("2026-10-28"), Some("19:00"), N, &[]),
+        ("아침 조깅", "조깅", Some("2026-10-28"), Some("09:00"), N, &[]),
+        ("저녁 7시 영화", "영화", Some("2026-10-28"), Some("19:00"), N, &[]),
+        ("오전 12시 알람", "알람", Some("2026-10-28"), Some("00:00"), N, &[]),
+        ("오후 12시 점심", "점심", Some("2026-10-28"), Some("12:00"), N, &[]),
+        ("내일 오후 3시 팀플 회의 #학교 !중요", "팀플 회의", Some("2026-10-29"), Some("15:00"), H, &["학교"]),
+        ("내일 저녁 친구 만나기 #개인", "친구 만나기", Some("2026-10-29"), Some("19:00"), N, &["개인"]),
+        ("모레 오전 10시 치과 !!", "치과", Some("2026-10-30"), Some("10:00"), H, &[]),
+        ("다음 주 금요일 14:30 발표 리허설 #학교 #팀플", "발표 리허설", Some("2026-11-06"), Some("14:30"), N, &["학교", "팀플"]),
+        ("책 읽기 !낮음", "책 읽기", None, None, L, &[]),
+        ("보고서 작성 !높음 #회사", "보고서 작성", None, None, H, &["회사"]),
+        ("!중요 세금 납부 10월 31일", "세금 납부", Some("2026-10-31"), None, H, &[]),
+        ("#집 빨래", "빨래", None, None, N, &["집"]),
+        ("장보기 #집 #마트", "장보기", None, None, N, &["집", "마트"]),
+        ("오늘 오후 6시 퇴근 후 운동 #건강", "퇴근 후 운동", Some("2026-10-28"), Some("18:00"), N, &["건강"]),
+        ("7일 뒤 보험 갱신 !!", "보험 갱신", Some("2026-11-04"), None, H, &[]),
+        ("10월 29일 오후 1시 면접", "면접", Some("2026-10-29"), Some("13:00"), N, &[]),
+        ("9시 30분 출근", "출근", Some("2026-10-28"), Some("09:30"), N, &[]),
+        ("25시 이상한 일정", "25시 이상한 일정", None, None, N, &[]),
+        ("2월 31일 존재하지 않는 날", "2월 31일 존재하지 않는 날", None, None, N, &[]),
+        ("  내일   공백   많음  ", "공백 많음", Some("2026-10-29"), None, N, &[]),
+        ("내일", "", Some("2026-10-29"), None, N, &[]),
+        ("2시간 공부", "2시간 공부", None, None, N, &[]),
+        ("점심 12:30 약속", "점심 약속", Some("2026-10-28"), Some("12:30"), N, &[]),
+        ("!낮음 #기타 오늘 정리", "정리", Some("2026-10-28"), None, L, &["기타"]),
+        ("회의록 정리 내일까지", "회의록 정리", Some("2026-10-29"), None, N, &[]),
+        ("오후 3시에 치과", "치과", Some("2026-10-28"), Some("15:00"), N, &[]),
+        ("3시 반 낮잠", "낮잠", Some("2026-10-28"), Some("03:30"), N, &[]),
+        ("10일 후 이사 준비", "이사 준비", Some("2026-11-07"), None, N, &[]),
+    ];
+
+    #[test]
+    fn corpus_has_at_least_fifty_cases() {
+        assert!(CORPUS.len() >= 50, "only {} cases", CORPUS.len());
+    }
+
+    #[test]
+    fn corpus_all_cases_parse_as_expected() {
+        let parser = RuleBasedParser::new();
+        let mut failures = Vec::new();
+        for &(input, title, date, time, priority, tags) in CORPUS {
+            let want = ParsedTask {
+                title: title.to_string(),
+                due_date: date.map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()),
+                due_time: time.map(|s| NaiveTime::parse_from_str(s, "%H:%M").unwrap()),
+                priority,
+                tags: tags.iter().map(|s| s.to_string()).collect(),
+            };
+            let got = parser.parse(input, now());
+            if got != want {
+                failures.push(format!("{input:?}
+  want {want:?}
+  got  {got:?}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} / {} cases failed:
+{}",
+            failures.len(),
+            CORPUS.len(),
+            failures.join("
+")
+        );
+    }
 }
