@@ -1,3 +1,7 @@
 /target
 /node_modules
 *.msixbundle
+
+node_modules/
+/ui/dist
+/src-tauri/gen/
