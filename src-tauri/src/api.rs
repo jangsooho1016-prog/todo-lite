@@ -20,6 +20,7 @@ type Service = TodoService<SqliteStore, RuleBasedParser>;
 #[derive(Debug)]
 pub enum ApiError {
     Core(Error),
+    FolderNotFound,
 }
 
 impl From<Error> for ApiError {
@@ -41,6 +42,7 @@ impl ApiError {
     /// 사용자에게 그대로 보여 줄 한국어 메시지.
     fn message(&self) -> String {
         match self {
+            ApiError::FolderNotFound => "폴더를 찾을 수 없어요".to_string(),
             ApiError::Core(Error::EmptyTitle) => "제목을 입력해 주세요".to_string(),
             ApiError::Core(Error::NotFound(_)) => "할 일을 찾을 수 없어요".to_string(),
             ApiError::Core(Error::Io(e)) => format!("폴더에 접근할 수 없어요: {e}"),
@@ -182,6 +184,9 @@ impl Api {
     /// `None`이나 빈 문자열이면 해제한다. (`TaskStore`에 삭제 API가 없어 빈 값으로 표시)
     pub fn set_sync_folder(&self, folder: Option<String>) -> Result<(), ApiError> {
         let value = folder.map(|f| f.trim().to_string()).unwrap_or_default();
+        if !value.is_empty() && !Path::new(&value).is_dir() {
+            return Err(ApiError::FolderNotFound);
+        }
         self.lock().store().meta_set(KEY_SYNC_FOLDER, &value)?;
         Ok(())
     }
@@ -310,11 +315,32 @@ mod tests {
         assert_eq!(api.sync_folder().unwrap(), None);
         assert_eq!(api.sync_now().unwrap(), SyncStatus::default());
 
-        api.set_sync_folder(Some("  C:/sync  ".into())).unwrap();
-        assert_eq!(api.sync_folder().unwrap().as_deref(), Some("C:/sync"));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        api.set_sync_folder(Some(format!("  {path}  "))).unwrap();
+        assert_eq!(api.sync_folder().unwrap().as_deref(), Some(path.as_str()));
 
         api.set_sync_folder(None).unwrap();
         assert_eq!(api.sync_folder().unwrap(), None);
+    }
+
+    #[test]
+    fn set_sync_folder_rejects_missing_directory() {
+        let api = api();
+        let good = tempfile::tempdir().unwrap();
+        let good_path = good.path().to_string_lossy().to_string();
+        api.set_sync_folder(Some(good_path.clone())).unwrap();
+
+        let missing = good.path().join("does-not-exist");
+        let err = api
+            .set_sync_folder(Some(missing.to_string_lossy().to_string()))
+            .unwrap_err();
+        assert!(matches!(err, ApiError::FolderNotFound));
+        assert_eq!(err.to_string(), "폴더를 찾을 수 없어요");
+        assert_eq!(
+            api.sync_folder().unwrap().as_deref(),
+            Some(good_path.as_str())
+        );
     }
 
     #[test]
