@@ -26,7 +26,13 @@
       return;
     }
     const action = actionForKey(
-      { key: e.key, ctrlKey: e.ctrlKey || e.metaKey, isComposing: e.isComposing },
+      {
+        key: e.key,
+        ctrlKey: e.ctrlKey || e.metaKey,
+        isComposing: e.isComposing,
+        code: e.code,
+        keyCode: (e as KeyboardEvent & { keyCode?: number }).keyCode,
+      },
       targetKind(e.target),
     );
     if (!action) return;

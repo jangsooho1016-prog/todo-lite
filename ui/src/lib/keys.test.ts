@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { actionForKey, targetKind } from './keys';
 
-const key = (k: string, extra: Partial<{ ctrlKey: boolean; isComposing: boolean }> = {}) => ({
+const key = (k: string, extra: Partial<{ ctrlKey: boolean; isComposing: boolean; code: string; keyCode: number }> = {}) => ({
   key: k,
   ctrlKey: false,
   ...extra,
@@ -14,6 +14,15 @@ describe('actionForKey', () => {
       expect(actionForKey(key('F', { ctrlKey: true }), kind)).toEqual({ type: 'focus-search' });
     }
     expect(actionForKey(key('x', { ctrlKey: true }), 'none')).toBeNull();
+  });
+
+  it('Ctrl shortcuts work on the Hangul layout via physical key code', () => {
+    expect(actionForKey(key('ㅜ', { ctrlKey: true, code: 'KeyN' }), 'text')).toEqual({ type: 'focus-add' });
+    expect(actionForKey(key('ㄹ', { ctrlKey: true, code: 'KeyF' }), 'text')).toEqual({ type: 'focus-search' });
+  });
+
+  it('treats keyCode 229 as composing', () => {
+    expect(actionForKey(key('Enter', { isComposing: false, keyCode: 229 }), 'none')).toBeNull();
   });
 
   it('Escape always works', () => {
@@ -63,6 +72,11 @@ describe('targetKind', () => {
   it('classifies clickable controls', () => {
     expect(targetKind(el('BUTTON'))).toBe('control');
     expect(targetKind(el('INPUT', { type: 'checkbox' }))).toBe('control');
+  });
+  it('buttons inside a task row are none so Space/Enter work after clicking a row', () => {
+    expect(targetKind(el('BUTTON', { closest: () => ({}) }))).toBe('none');
+    expect(targetKind(el('BUTTON', { closest: () => null }))).toBe('control');
+    expect(targetKind(el('INPUT', { type: 'checkbox', closest: () => ({}) }))).toBe('control');
   });
   it('treats everything else as none', () => {
     expect(targetKind(el('DIV'))).toBe('none');

@@ -11,6 +11,9 @@ export interface KeyInput {
   key: string;
   ctrlKey: boolean;
   isComposing?: boolean;
+  /** 물리 키 코드. 한글 자판에서도 'KeyN'처럼 고정이다. */
+  code?: string;
+  keyCode?: number;
 }
 
 /** text: 글자를 입력하는 칸. control: 버튼·체크박스. none: 그 밖(본문 등). */
@@ -18,12 +21,12 @@ export type TargetKind = 'text' | 'control' | 'none';
 
 export function actionForKey(e: KeyInput, target: TargetKind): KeyAction | null {
   // 한글 조합 중에는 어떤 단축키도 가로채지 않는다.
-  if (e.isComposing) return null;
+  if (e.isComposing || e.keyCode === 229) return null;
 
   if (e.ctrlKey) {
     const k = e.key.toLowerCase();
-    if (k === 'n') return { type: 'focus-add' };
-    if (k === 'f') return { type: 'focus-search' };
+    if (e.code === 'KeyN' || k === 'n') return { type: 'focus-add' };
+    if (e.code === 'KeyF' || k === 'f') return { type: 'focus-search' };
     return null;
   }
   if (e.key === 'Escape') return { type: 'escape' };
@@ -49,7 +52,7 @@ export function actionForKey(e: KeyInput, target: TargetKind): KeyAction | null 
 const CLICKABLE_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset']);
 
 export function targetKind(target: EventTarget | null): TargetKind {
-  const el = target as { tagName?: unknown; type?: unknown; isContentEditable?: unknown } | null;
+  const el = target as { tagName?: unknown; type?: unknown; isContentEditable?: unknown; closest?: unknown } | null;
   if (!el || typeof el.tagName !== 'string') return 'none';
   if (el.isContentEditable === true) return 'text';
   switch (el.tagName) {
@@ -57,7 +60,8 @@ export function targetKind(target: EventTarget | null): TargetKind {
     case 'SELECT':
       return 'text';
     case 'BUTTON':
-      return 'control';
+      // 행을 클릭하면 행 본문 버튼에 포커스가 간다. 그 상태에서도 Space/Enter 단축키가 동작해야 한다.
+      return typeof el.closest === 'function' && el.closest('.row') ? 'none' : 'control';
     case 'INPUT':
       return CLICKABLE_INPUTS.has(String(el.type)) ? 'control' : 'text';
     default:
