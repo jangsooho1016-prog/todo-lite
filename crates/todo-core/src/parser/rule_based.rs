@@ -19,6 +19,9 @@ pub struct RuleBasedParser {
     week_weekday: Regex,
     next_week: Regex,
     day_word: Regex,
+    hour_minute: Regex,
+    clock: Regex,
+    time_word: Regex,
 }
 
 impl Default for RuleBasedParser {
@@ -39,6 +42,12 @@ impl RuleBasedParser {
             week_weekday: re(&format!(r"(이번|다음)\s*주\s*(월|화|수|목|금|토|일)요일{SUFFIX}")),
             next_week: re(&format!(r"다음\s*주{SUFFIX}")),
             day_word: re(&format!(r"(오늘|내일|모레|글피){SUFFIX}")),
+            hour_minute: re(&format!(r"(\d{{1,2}}):(\d{{2}}){SUFFIX}")),
+            // 그룹: 1 오전/오후 접두어, 2 시, 3 "간"(시간 duration이면 거부), 4 "반", 5 분
+            clock: re(&format!(
+                r"(오전|오후|아침|저녁|밤|새벽)?\s*(\d{{1,2}})시(간)?\s*(?:(반)|(\d{{1,2}})분)?{SUFFIX}"
+            )),
+            time_word: re(&format!(r"(아침|점심|저녁){SUFFIX}")),
         }
     }
 
@@ -92,6 +101,45 @@ impl RuleBasedParser {
     }
 }
 
+impl RuleBasedParser {
+    /// 시각 표현 하나를 찾아 지운다. 명시적 시각이 있으면 `점심` 같은 단어는 건드리지 않는다.
+    fn take_time(&self, rest: &mut String) -> Option<NaiveTime> {
+        if let Some(time) = extract(rest, &self.hour_minute, |g| {
+            NaiveTime::from_hms_opt(num(&g[0])?, num(&g[1])?, 0)
+        }) {
+            return Some(time);
+        }
+        if let Some(time) = extract(rest, &self.clock, |g| {
+            if !g[2].is_empty() {
+                return None; // "2시간"은 시각이 아니다
+            }
+            let hour: u32 = num(&g[1])?;
+            let minute: u32 = if !g[3].is_empty() {
+                30
+            } else if !g[4].is_empty() {
+                num(&g[4])?
+            } else {
+                0
+            };
+            let hour = match g[0].as_str() {
+                "오전" | "새벽" => if hour == 12 { 0 } else { hour },
+                "밤" if hour == 12 => 0,
+                "오후" | "저녁" | "밤" => if hour < 12 { hour + 12 } else { hour },
+                _ => hour,
+            };
+            NaiveTime::from_hms_opt(hour, minute, 0)
+        }) {
+            return Some(time);
+        }
+        extract(rest, &self.time_word, |g| match g[0].as_str() {
+            "아침" => NaiveTime::from_hms_opt(9, 0, 0),
+            "점심" => NaiveTime::from_hms_opt(12, 0, 0),
+            "저녁" => NaiveTime::from_hms_opt(19, 0, 0),
+            _ => None,
+        })
+    }
+}
+
 impl TaskParser for RuleBasedParser {
     fn parse(&self, input: &str, now: NaiveDateTime) -> ParsedTask {
         let mut rest = input.to_string();
@@ -106,12 +154,16 @@ impl TaskParser for RuleBasedParser {
         })
         .unwrap_or_default();
 
-        let due_date = self.take_date(&mut rest, now.date());
+        let today = now.date();
+        let due_date = self.take_date(&mut rest, today);
+        let due_time = self.take_time(&mut rest);
+        // 날짜 없이 시각만 있으면 오늘로 본다. 이미 지난 시각이어도 내일로 넘기지 않는다.
+        let due_date = due_date.or_else(|| due_time.map(|_| today));
 
         ParsedTask {
             title: rest.split_whitespace().collect::<Vec<_>>().join(" "),
             due_date,
-            due_time: None::<NaiveTime>,
+            due_time,
             priority,
             tags: normalize_tags(tags),
         }
@@ -280,5 +332,90 @@ mod tests {
         let p = parse("회의록 정리 내일까지");
         assert_eq!(p.due_date, d(2026, 10, 29));
         assert_eq!(p.title, "회의록 정리");
+    }
+
+    fn time(input: &str) -> Option<NaiveTime> {
+        parse(input).due_time
+    }
+
+    fn hm(h: u32, m: u32) -> Option<NaiveTime> {
+        NaiveTime::from_hms_opt(h, m, 0)
+    }
+
+    #[test]
+    fn clock_expressions() {
+        assert_eq!(time("오후 3시 회의"), hm(15, 0));
+        assert_eq!(time("오전 9시 운동"), hm(9, 0));
+        assert_eq!(time("오후 2시 30분 상담"), hm(14, 30));
+        assert_eq!(time("오후 3시 반 미팅"), hm(15, 30));
+        assert_eq!(time("15:00 스터디"), hm(15, 0));
+        assert_eq!(time("9시 30분 출근"), hm(9, 30));
+        assert_eq!(parse("오후 3시 회의").title, "회의");
+    }
+
+    #[test]
+    fn meridiem_edge_cases() {
+        assert_eq!(time("오전 12시 알람"), hm(0, 0));
+        assert_eq!(time("오후 12시 점심"), hm(12, 0));
+        assert_eq!(time("저녁 7시 영화"), hm(19, 0));
+        assert_eq!(time("밤 12시 마감"), hm(0, 0));
+    }
+
+    #[test]
+    fn hour_without_meridiem_is_24h_literal() {
+        assert_eq!(time("3시 반 낮잠"), hm(3, 30));
+        assert_eq!(time("18시 퇴근"), hm(18, 0));
+    }
+
+    #[test]
+    fn time_words() {
+        assert_eq!(time("아침 조깅"), hm(9, 0));
+        assert_eq!(time("점심 약속"), hm(12, 0));
+        assert_eq!(time("저녁 장보기"), hm(19, 0));
+        assert_eq!(parse("저녁 장보기").title, "장보기");
+    }
+
+    #[test]
+    fn explicit_time_wins_over_time_words() {
+        let p = parse("오후 12시 점심");
+        assert_eq!(p.due_time, hm(12, 0));
+        assert_eq!(p.title, "점심");
+
+        let p = parse("점심 12:30 약속");
+        assert_eq!(p.due_time, hm(12, 30));
+        assert_eq!(p.title, "점심 약속");
+    }
+
+    #[test]
+    fn invalid_or_duration_times_stay_in_the_title() {
+        let p = parse("25시 이상한 일정");
+        assert_eq!((p.due_time, p.title.as_str()), (None, "25시 이상한 일정"));
+
+        let p = parse("2시간 공부");
+        assert_eq!((p.due_time, p.title.as_str()), (None, "2시간 공부"));
+    }
+
+    #[test]
+    fn time_without_date_means_today_even_if_already_past() {
+        let p = parse("오전 9시 운동"); // 지금은 15:00
+        assert_eq!(p.due_date, d(2026, 10, 28));
+        assert_eq!(p.due_time, hm(9, 0));
+    }
+
+    #[test]
+    fn particle_after_time_is_consumed() {
+        let p = parse("오후 3시에 치과");
+        assert_eq!(p.due_time, hm(15, 0));
+        assert_eq!(p.title, "치과");
+    }
+
+    #[test]
+    fn date_and_time_and_tags_and_priority_together() {
+        let p = parse("내일 오후 3시 팀플 회의 #학교 !중요");
+        assert_eq!(p.title, "팀플 회의");
+        assert_eq!(p.due_date, d(2026, 10, 29));
+        assert_eq!(p.due_time, hm(15, 0));
+        assert_eq!(p.priority, Priority::High);
+        assert_eq!(p.tags, ["학교"]);
     }
 }
