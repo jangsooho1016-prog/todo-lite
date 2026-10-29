@@ -2,7 +2,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -10,7 +9,10 @@ use crate::model::Task;
 use crate::store::{fmt_dt, TaskStore};
 
 const KEY_DEVICE_ID: &str = "device_id";
-const KEY_LAST_EXPORT: &str = "sync_last_export";
+
+fn exported_key(id: Uuid) -> String {
+    format!("sync_exported:{id}")
+}
 
 fn offset_key(file_stem: &str) -> String {
     format!("sync_offset:{file_stem}")
@@ -56,17 +58,16 @@ impl SyncEngine {
 
     /// 마지막 내보내기 이후 **이 기기가** 바꾼 할 일을 내 로그에 덧붙인다. 쓴 줄 수를 돌려준다.
     pub fn export<S: TaskStore>(&self, store: &S) -> Result<usize> {
-        let watermark: Option<DateTime<Utc>> = store
-            .meta_get(KEY_LAST_EXPORT)?
-            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-            .map(|d| d.with_timezone(&Utc));
-
-        let mut pending: Vec<Task> = store
-            .all_including_deleted()?
-            .into_iter()
-            .filter(|t| t.updated_by == self.device_id)
-            .filter(|t| watermark.is_none_or(|w| t.updated_at > w))
-            .collect();
+        let mut pending: Vec<Task> = Vec::new();
+        for task in store.all_including_deleted()? {
+            if task.updated_by != self.device_id {
+                continue;
+            }
+            let stored = store.meta_get(&exported_key(task.id))?;
+            if stored.as_deref() != Some(fmt_dt(&task.updated_at).as_str()) {
+                pending.push(task);
+            }
+        }
         if pending.is_empty() {
             return Ok(0);
         }
@@ -75,15 +76,28 @@ impl SyncEngine {
         fs::create_dir_all(&self.dir)?;
         let mut file = OpenOptions::new()
             .create(true)
+            .read(true)
             .append(true)
             .open(self.own_file())?;
+        // 이전에 잘린 채 끝난 파일이면 개행으로 먼저 끊어, 새 줄이 붙어 깨지지 않게 한다.
+        let len = file.metadata()?.len();
+        if len > 0 {
+            let mut last = [0u8; 1];
+            file.seek(SeekFrom::Start(len - 1))?;
+            file.read_exact(&mut last)?;
+            if last[0] != b'\n' {
+                file.write_all(b"\n")?;
+            }
+        }
         for task in &pending {
             writeln!(file, "{}", serde_json::to_string(task)?)?;
         }
         file.flush()?;
 
-        let newest = pending.last().expect("non-empty").updated_at;
-        store.meta_set(KEY_LAST_EXPORT, &fmt_dt(&newest))?;
+        // 쓰기가 끝난 뒤에 기록한다. 중간에 죽어도 중복 줄만 생길 뿐 유실은 없다(import는 멱등).
+        for task in &pending {
+            store.meta_set(&exported_key(task.id), &fmt_dt(&task.updated_at))?;
+        }
         Ok(pending.len())
     }
 
@@ -395,6 +409,80 @@ mod tests {
 
         std::fs::write(&path, format!("{head}{tail}\n")).unwrap(); // 업로드 완료
         assert_eq!(eb.import(b.store()).unwrap().applied, 1);
+    }
+
+    fn at_hms(h: u32, m: u32, s: u32) -> Now {
+        Now::fixed(
+            NaiveDate::from_ymd_opt(2026, 10, 28)
+                .unwrap()
+                .and_hms_opt(h, m, s)
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn edit_with_a_behind_clock_after_importing_still_converges() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (svc("pc"), svc("phone"));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
+
+        let task = a.add_from_input("원본", at_hms(9, 0, 0)).unwrap();
+        ea.export(a.store()).unwrap();
+        eb.import(b.store()).unwrap();
+
+        rename(&a, task.id, "A 10:00:01", at_hms(10, 0, 1));
+        ea.export(a.store()).unwrap();
+        eb.import(b.store()).unwrap();
+
+        rename(&b, task.id, "B 10:00:00", at_hms(10, 0, 0)); // B의 시계가 뒤처짐
+        eb.export(b.store()).unwrap();
+        ea.import(a.store()).unwrap();
+        eb.import(b.store()).unwrap();
+
+        assert_eq!(all(&a)[0].title, "B 10:00:00");
+        assert_eq!(all(&b)[0].title, "B 10:00:00");
+    }
+
+    #[test]
+    fn edit_made_while_the_clock_is_behind_the_last_export_is_still_exported() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (svc("pc"), svc("phone"));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
+
+        a.add_from_input("Z", at_hms(11, 0, 0)).unwrap();
+        assert_eq!(ea.export(a.store()).unwrap(), 1);
+        a.add_from_input("Y", at_hms(10, 0, 0)).unwrap(); // 시계가 되돌아감
+        assert_eq!(ea.export(a.store()).unwrap(), 1);
+
+        eb.import(b.store()).unwrap();
+        let titles: Vec<String> = all(&b).into_iter().map(|t| t.title).collect();
+        assert!(titles.contains(&"Z".to_string()), "{titles:?}");
+        assert!(titles.contains(&"Y".to_string()), "{titles:?}");
+    }
+
+    #[test]
+    fn export_after_a_file_without_trailing_newline_does_not_lose_the_new_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (svc("pc"), svc("phone"));
+        let (ea, eb) = (
+            SyncEngine::new("pc", dir.path()),
+            SyncEngine::new("phone", dir.path()),
+        );
+        std::fs::write(dir.path().join("pc.jsonl"), "{\"id\":\"half-written").unwrap();
+
+        a.add_from_input("새 할 일", at(9)).unwrap();
+        assert_eq!(ea.export(a.store()).unwrap(), 1);
+
+        let report = eb.import(b.store()).unwrap();
+        assert_eq!(report.applied, 1);
+        assert_eq!(report.corrupt_lines, 1);
+        assert_eq!(all(&b).len(), 1);
     }
 
     #[test]

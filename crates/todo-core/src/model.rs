@@ -90,7 +90,9 @@ impl Task {
     }
 
     pub fn touch(&mut self, now: DateTime<Utc>, device_id: &str) {
-        self.updated_at = now;
+        // 시계가 어긋난 기기끼리도 수정이 항상 이전 버전보다 새롭게 보이도록 단조 증가시킨다.
+        let floor = self.updated_at + chrono::Duration::microseconds(1);
+        self.updated_at = now.max(floor);
         self.updated_by = device_id.to_string();
     }
 }
@@ -160,6 +162,16 @@ mod tests {
         assert_eq!(t.updated_at, later);
         assert_eq!(t.updated_by, "phone");
         assert_eq!(t.created_at, t0());
+    }
+
+    #[test]
+    fn touch_is_monotonic_even_if_clock_went_backwards() {
+        let mut t = Task::new("a", t0(), "pc");
+        t.touch(t0() - chrono::Duration::minutes(1), "pc");
+        assert_eq!(t.updated_at, t0() + chrono::Duration::microseconds(1));
+        let later = t0() + chrono::Duration::minutes(5);
+        t.touch(later, "pc");
+        assert_eq!(t.updated_at, later);
     }
 
     #[test]
