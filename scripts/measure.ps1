@@ -31,11 +31,15 @@ do {
 
 $procs = Get-Process -Id ($ids | ForEach-Object { $_ }) -ErrorAction SilentlyContinue
 $ws = ($procs | Measure-Object WorkingSet64 -Sum).Sum
-$priv = ($procs | Measure-Object PrivateMemorySize64 -Sum).Sum
+$commit = ($procs | Measure-Object PrivateMemorySize64 -Sum).Sum
+$perf = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process |
+    Where-Object { $ids.Contains([int]$_.IDProcess) }
+$wsPrivate = ($perf | Measure-Object WorkingSetPrivate -Sum).Sum
 
 '--- 유휴 메모리 ({0}초 후, 프로세스 {1}개, WebView2 포함) ---' -f $IdleSeconds, @($procs).Count
-'작업 집합 합계: {0:N0} MB   (공유 페이지가 중복 계산됨)' -f ($ws / 1MB)
-'프라이빗 메모리 합계: {0:N0} MB   (목표 약 100 MB 이하)' -f ($priv / 1MB)
+'프라이빗 작업 집합 합계 (목표 약 100 MB 이하): {0:N0} MB' -f ($wsPrivate / 1MB)
+'작업 집합 합계 (공유 페이지 중복 계산됨): {0:N0} MB' -f ($ws / 1MB)
+'커밋(프라이빗 바이트) 합계: {0:N0} MB' -f ($commit / 1MB)
 
 '--- 시작 시간 ---'
 $ready = Select-String -Path $errFile -Pattern 'ready_ms=(\d+)' | Select-Object -First 1
