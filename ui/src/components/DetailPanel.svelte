@@ -1,41 +1,55 @@
 <script lang="ts">
-  import { parseTagInput, tagsToText, timeInputValue } from '../lib/format';
+  import { draftFromTask, draftIsDirty, editFromDraft, type Draft } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import type { Priority, Task } from '../lib/types';
 
   let { task }: { task: Task } = $props();
 
+  /* svelte-ignore state_referenced_locally */
+  const initial = draftFromTask(task);
   // 선택된 할 일이 바뀌면 이 컴포넌트가 새로 만들어지므로 초기값만 복사한다.
+  let title = $state(initial.title);
+  let dueDate = $state(initial.dueDate);
+  let dueTime = $state(initial.dueTime);
+  let priority = $state<Priority>(initial.priority);
+  let tagText = $state(initial.tagText);
+  let notes = $state(initial.notes);
+
+  let panel: HTMLDivElement | undefined = $state();
   /* svelte-ignore state_referenced_locally */
-  let title = $state(task.title);
-  /* svelte-ignore state_referenced_locally */
-  let dueDate = $state(task.due_date ?? '');
-  /* svelte-ignore state_referenced_locally */
-  let dueTime = $state(timeInputValue(task.due_time));
-  /* svelte-ignore state_referenced_locally */
-  let priority = $state<Priority>(task.priority);
-  /* svelte-ignore state_referenced_locally */
-  let tagText = $state(tagsToText(task.tags));
-  /* svelte-ignore state_referenced_locally */
-  let notes = $state(task.notes ?? '');
+  let lastSeen = task.updated_at;
+
+  // 밖에서(동기화 등) 할 일이 바뀌었고 사용자가 이 패널을 편집 중이 아니면 입력칸을 새로 채운다.
+  $effect(() => {
+    const stamp = task.updated_at;
+    if (stamp === lastSeen) return;
+    lastSeen = stamp;
+    if (panel?.contains(document.activeElement)) return;
+    const d = draftFromTask(task);
+    title = d.title;
+    notes = d.notes;
+    dueDate = d.dueDate;
+    dueTime = d.dueTime;
+    priority = d.priority;
+    tagText = d.tagText;
+  });
 
   async function save() {
-    const ok = await app.save(task.id, {
-      title,
-      notes: notes.trim() ? notes : null,
-      due_date: dueDate || null,
-      due_time: dueTime || null,
-      priority,
-      tags: parseTagInput(tagText),
-    });
+    const draft: Draft = { title, notes, dueDate, dueTime, priority, tagText };
+    if (!draftIsDirty(task, draft)) return;
+    const ok = await app.save(task.id, editFromDraft(draft));
     if (!ok) title = task.title; // 제목을 비웠다면 원래 제목으로 되돌린다
+  }
+
+  function commitOnEnter(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.isComposing) (e.currentTarget as HTMLInputElement).blur();
   }
 </script>
 
-<div class="detail-panel">
+<div class="detail-panel" bind:this={panel}>
   <label class="field">
     <span>제목</span>
-    <input id="detail-title" type="text" bind:value={title} onblur={save} />
+    <input id="detail-title" type="text" bind:value={title} onblur={save} onkeydown={commitOnEnter} />
   </label>
 
   <div class="field-row">

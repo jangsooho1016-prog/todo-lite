@@ -1,4 +1,4 @@
-import type { SyncStatus, Task } from './types';
+import type { Priority, SyncStatus, Task, TaskEdit } from './types';
 
 const MS_PER_DAY = 86_400_000;
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -70,4 +70,50 @@ export function errorText(e: unknown): string {
 export function describeSync(s: SyncStatus, time: string): string {
   const base = `${time} 동기화 · 가져옴 ${s.applied} · 보냄 ${s.exported}`;
   return s.corrupt_lines > 0 ? `${base} · 손상된 줄 ${s.corrupt_lines}개 건너뜀` : base;
+}
+
+export interface Draft {
+  title: string;
+  notes: string;
+  dueDate: string;
+  dueTime: string;
+  priority: Priority;
+  tagText: string;
+}
+
+export function draftFromTask(t: Task): Draft {
+  return {
+    title: t.title,
+    notes: t.notes ?? '',
+    dueDate: t.due_date ?? '',
+    dueTime: timeInputValue(t.due_time),
+    priority: t.priority,
+    tagText: tagsToText(t.tags),
+  };
+}
+
+export function editFromDraft(d: Draft): TaskEdit {
+  return {
+    title: d.title,
+    notes: d.notes.trim() ? d.notes : null,
+    due_date: d.dueDate || null,
+    due_time: d.dueTime || null,
+    priority: d.priority,
+    tags: parseTagInput(d.tagText),
+  };
+}
+
+/** 코어가 제목·메모를 trim하므로 비교도 trim 후에 한다. */
+export function draftIsDirty(task: Task, d: Draft): boolean {
+  const a = editFromDraft(d);
+  const b = editFromDraft(draftFromTask(task));
+  return (
+    a.title.trim() !== b.title.trim() ||
+    (a.notes ?? '').trim() !== (b.notes ?? '').trim() ||
+    a.due_date !== b.due_date ||
+    a.due_time !== b.due_time ||
+    a.priority !== b.priority ||
+    a.tags.length !== b.tags.length ||
+    a.tags.some((t, i) => t !== b.tags[i])
+  );
 }

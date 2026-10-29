@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { Task } from './types';
 import {
   describeSync,
+  draftFromTask,
+  draftIsDirty,
+  editFromDraft,
   errorText,
   formatDue,
   isOverdue,
@@ -89,5 +93,68 @@ describe('describeSync', () => {
     expect(describeSync({ configured: true, exported: 0, applied: 0, corrupt_lines: 3 }, '09:00')).toBe(
       '09:00 동기화 · 가져옴 0 · 보냄 0 · 손상된 줄 3개 건너뜀',
     );
+  });
+});
+
+describe('draft dirty detection', () => {
+  const task: Task = {
+    id: '1',
+    title: '회의',
+    notes: null,
+    due_date: '2026-10-29',
+    due_time: '15:00:00',
+    priority: 'normal',
+    tags: ['학교', '개인'],
+    completed_at: null,
+    created_at: '',
+    updated_at: '',
+    updated_by: '',
+    deleted: false,
+  };
+  const dirty = (patch: Partial<ReturnType<typeof draftFromTask>>) =>
+    draftIsDirty(task, { ...draftFromTask(task), ...patch });
+
+  it('seeds a draft from the task', () => {
+    expect(draftFromTask(task)).toEqual({
+      title: '회의',
+      notes: '',
+      dueDate: '2026-10-29',
+      dueTime: '15:00',
+      priority: 'normal',
+      tagText: '#학교 #개인',
+    });
+  });
+  it('builds an edit from a draft', () => {
+    const d = { ...draftFromTask(task), notes: '  ', dueDate: '', dueTime: '' };
+    expect(editFromDraft(d)).toEqual({
+      title: '회의',
+      notes: null,
+      due_date: null,
+      due_time: null,
+      priority: 'normal',
+      tags: ['학교', '개인'],
+    });
+  });
+  it('unchanged draft is not dirty', () => {
+    expect(draftIsDirty(task, draftFromTask(task))).toBe(false);
+    expect(draftIsDirty({ ...task, due_time: null }, draftFromTask({ ...task, due_time: null }))).toBe(false);
+  });
+  it('whitespace-only changes and blank notes are not dirty', () => {
+    expect(dirty({ title: '  회의 ' })).toBe(false);
+    expect(dirty({ notes: '   ' })).toBe(false);
+    expect(draftIsDirty({ ...task, notes: ' x ' }, draftFromTask({ ...task, notes: ' x ' }))).toBe(false);
+    expect(draftIsDirty({ ...task, notes: 'x' }, { ...draftFromTask(task), notes: ' x ' })).toBe(false);
+  });
+  it('any real change is dirty', () => {
+    expect(dirty({ title: '회의2' })).toBe(true);
+    expect(dirty({ notes: '메모' })).toBe(true);
+    expect(dirty({ dueDate: '2026-10-30' })).toBe(true);
+    expect(dirty({ dueTime: '16:00' })).toBe(true);
+    expect(dirty({ priority: 'high' })).toBe(true);
+    expect(dirty({ tagText: '#학교' })).toBe(true);
+  });
+  it('normalizes tag input but respects order', () => {
+    expect(dirty({ tagText: '#학교 개인' })).toBe(false);
+    expect(dirty({ tagText: '개인 학교' })).toBe(true);
   });
 });
