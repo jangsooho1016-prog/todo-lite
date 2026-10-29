@@ -10,12 +10,12 @@ use crate::store::{fmt_dt, TaskStore};
 
 const KEY_DEVICE_ID: &str = "device_id";
 
-fn exported_key(id: Uuid) -> String {
-    format!("sync_exported:{id}")
+fn exported_key(scope: &str, id: Uuid) -> String {
+    format!("sync_exported:{scope}:{id}")
 }
 
-fn offset_key(file_stem: &str) -> String {
-    format!("sync_offset:{file_stem}")
+fn offset_key(scope: &str, file_stem: &str) -> String {
+    format!("sync_offset:{scope}:{file_stem}")
 }
 
 /// 이 기기의 고유 ID를 돌려준다. 처음이면 만들어서 저장한다.
@@ -52,18 +52,24 @@ impl SyncEngine {
         }
     }
 
+    /// 표식을 폴더별로 나누는 범위. 같은 폴더의 다른 표기는 재내보내기/재읽기만 일으키고 무해하다.
+    fn scope(&self) -> std::borrow::Cow<'_, str> {
+        self.dir.to_string_lossy()
+    }
+
     fn own_file(&self) -> PathBuf {
         self.dir.join(format!("{}.jsonl", self.device_id))
     }
 
     /// 마지막 내보내기 이후 **이 기기가** 바꾼 할 일을 내 로그에 덧붙인다. 쓴 줄 수를 돌려준다.
     pub fn export<S: TaskStore>(&self, store: &S) -> Result<usize> {
+        let scope = self.scope();
         let mut pending: Vec<Task> = Vec::new();
         for task in store.all_including_deleted()? {
             if task.updated_by != self.device_id {
                 continue;
             }
-            let stored = store.meta_get(&exported_key(task.id))?;
+            let stored = store.meta_get(&exported_key(&scope, task.id))?;
             if stored.as_deref() != Some(fmt_dt(&task.updated_at).as_str()) {
                 pending.push(task);
             }
@@ -96,7 +102,7 @@ impl SyncEngine {
 
         // 쓰기가 끝난 뒤에 기록한다. 중간에 죽어도 중복 줄만 생길 뿐 유실은 없다(import는 멱등).
         for task in &pending {
-            store.meta_set(&exported_key(task.id), &fmt_dt(&task.updated_at))?;
+            store.meta_set(&exported_key(&scope, task.id), &fmt_dt(&task.updated_at))?;
         }
         Ok(pending.len())
     }
@@ -120,7 +126,7 @@ impl SyncEngine {
                 continue;
             }
 
-            let key = offset_key(stem);
+            let key = offset_key(&self.scope(), stem);
             let mut file = File::open(&path)?;
             let mut offset: u64 = store
                 .meta_get(&key)?
@@ -491,6 +497,55 @@ mod tests {
         let b = svc("phone");
         let eb = SyncEngine::new("phone", dir.path().join("does-not-exist"));
         assert_eq!(eb.import(b.store()).unwrap(), ImportReport::default());
+    }
+
+    #[test]
+    fn switching_to_a_new_folder_exports_everything_again() {
+        let (dir1, dir2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (a, b) = (svc("pc"), svc("phone"));
+        a.add_from_input("하나", at(9)).unwrap();
+
+        let e1 = SyncEngine::new("pc", dir1.path());
+        assert_eq!(e1.export(a.store()).unwrap(), 1);
+
+        let e2 = SyncEngine::new("pc", dir2.path());
+        assert_eq!(e2.export(a.store()).unwrap(), 1);
+        let eb = SyncEngine::new("phone", dir2.path());
+        assert_eq!(eb.import(b.store()).unwrap().applied, 1);
+        assert_eq!(all(&b).len(), 1);
+
+        assert_eq!(e1.export(a.store()).unwrap(), 0);
+    }
+
+    #[test]
+    fn import_offsets_are_tracked_per_folder() {
+        let (dir1, dir2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (a1, a2) = (svc("pc"), svc("pc"));
+        a1.add_from_input("가나", at(9)).unwrap();
+        a2.add_from_input("다라", at(9)).unwrap();
+        SyncEngine::new("pc", dir1.path())
+            .export(a1.store())
+            .unwrap();
+        SyncEngine::new("pc", dir2.path())
+            .export(a2.store())
+            .unwrap();
+
+        let b = svc("phone");
+        assert_eq!(
+            SyncEngine::new("phone", dir1.path())
+                .import(b.store())
+                .unwrap()
+                .applied,
+            1
+        );
+        assert_eq!(
+            SyncEngine::new("phone", dir2.path())
+                .import(b.store())
+                .unwrap()
+                .applied,
+            1
+        );
+        assert_eq!(all(&b).len(), 2);
     }
 
     #[test]
