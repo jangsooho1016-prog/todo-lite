@@ -24,14 +24,28 @@
     }
   }
 
+  let busy = false;
+  let composedAt = 0;
+
   async function onKeydown(e: KeyboardEvent) {
-    if (e.key !== 'Enter' || e.isComposing) return;
+    if (e.key !== 'Enter') return;
+    // IME 조합 확정 Enter는 무시한다. 일부 WebView2는 isComposing=false에 keyCode 229로 보낸다.
+    if (e.isComposing || e.keyCode === 229 || performance.now() - composedAt < 50) return;
     e.preventDefault();
-    const task = await app.addFromInput(text);
-    if (task) {
-      text = '';
-      parsed = null;
-      seq++;
+    if (busy || !text.trim()) return;
+    busy = true;
+    const value = text;
+    text = '';
+    parsed = null;
+    seq++;
+    try {
+      const task = await app.addFromInput(value);
+      if (!task && !text) {
+        text = value; // 실패하면 입력을 잃지 않게 되돌린다
+        void onInput();
+      }
+    } finally {
+      busy = false;
     }
   }
 </script>
@@ -46,6 +60,7 @@
     bind:value={text}
     oninput={onInput}
     onkeydown={onKeydown}
+    oncompositionend={() => (composedAt = performance.now())}
   />
   {#if parsed && text.trim()}
     <div class="chips" aria-live="polite">
