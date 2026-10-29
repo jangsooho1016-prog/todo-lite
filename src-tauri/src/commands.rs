@@ -7,52 +7,52 @@ use uuid::Uuid;
 use crate::api::{Api, ApiError, ListQuery, ParsedDto, SyncStatus};
 use crate::Startup;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn preview_input(api: State<'_, Api>, input: String) -> ParsedDto {
     api.preview(&input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_task(api: State<'_, Api>, input: String) -> Result<Task, ApiError> {
     api.add_task(&input)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_tasks(api: State<'_, Api>, query: ListQuery) -> Result<Vec<Task>, ApiError> {
     api.list_tasks(&query)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_tags(api: State<'_, Api>) -> Result<Vec<TagCount>, ApiError> {
     api.list_tags()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn edit_task(api: State<'_, Api>, id: Uuid, edit: TaskEdit) -> Result<Task, ApiError> {
     api.edit_task(id, edit)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_completed(api: State<'_, Api>, id: Uuid, done: bool) -> Result<Task, ApiError> {
     api.set_completed(id, done)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_task(api: State<'_, Api>, id: Uuid) -> Result<(), ApiError> {
     api.delete_task(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_sync_folder(api: State<'_, Api>) -> Result<Option<String>, ApiError> {
     api.sync_folder()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_sync_folder(api: State<'_, Api>, folder: Option<String>) -> Result<(), ApiError> {
     api.set_sync_folder(folder)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_now(api: State<'_, Api>) -> Result<SyncStatus, ApiError> {
     api.sync_now()
 }
