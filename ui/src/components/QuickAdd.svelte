@@ -40,7 +40,8 @@
   <input
     id="quick-add-input"
     type="text"
-    placeholder="예: 내일 오후 3시 팀플 회의 #학교 !중요   (Ctrl+N)"
+    placeholder="예: 내일 3시 회의 #학교 !중요"
+    title="Ctrl+N으로 바로 입력"
     autocomplete="off"
     bind:value={text}
     oninput={onInput}
