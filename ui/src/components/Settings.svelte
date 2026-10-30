@@ -59,7 +59,8 @@
     }
   }
 
-  async function toggleAutostart(checked: boolean) {
+  async function toggleAutostart(input: HTMLInputElement) {
+    const checked = input.checked;
     autostartBusy = true;
     autostartError = null;
     try {
@@ -69,6 +70,8 @@
       autostartOn = !checked;
     } finally {
       autostartBusy = false;
+      // `checked`는 한 방향 바인딩이라 값이 그대로면 DOM이 갱신되지 않는다. 실제 상태로 맞춘다.
+      input.checked = autostartOn;
     }
   }
 
@@ -133,7 +136,7 @@
         type="checkbox"
         checked={autostartOn}
         disabled={autostartBusy}
-        onchange={(e) => toggleAutostart(e.currentTarget.checked)}
+        onchange={(e) => toggleAutostart(e.currentTarget)}
       />
       <span>사용</span>
     </label>
