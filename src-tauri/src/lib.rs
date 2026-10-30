@@ -108,6 +108,9 @@ pub fn run() {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(3));
+                    if timing {
+                        eprintln!("t_quick_trigger_ms={}", started.elapsed().as_millis());
+                    }
                     quick::show(&handle);
                 });
             }
