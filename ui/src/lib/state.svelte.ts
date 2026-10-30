@@ -29,6 +29,7 @@ class AppState {
   syncFolder = $state<string | null>(null);
   syncMessage = $state<string | null>(null);
   syncing = $state(false);
+  confirmState = $state<{ message: string; confirmLabel: string; resolve: (ok: boolean) => void } | null>(null);
 
   selected = $derived(this.tasks.find((t) => t.id === this.selectedId) ?? null);
   openTasks = $derived(this.tasks.filter((t) => !t.completed_at));
@@ -180,8 +181,26 @@ class AppState {
     }
   }
 
+  /** 앱 안의 확인창을 띄우고 답을 기다린다. 이미 열려 있으면 그 요청은 취소(false)로 닫는다. */
+  askConfirm(message: string, confirmLabel = '삭제'): Promise<boolean> {
+    this.answerConfirm(false);
+    return new Promise<boolean>((resolve) => {
+      this.confirmState = { message, confirmLabel, resolve };
+    });
+  }
+
+  answerConfirm(ok: boolean) {
+    const pending = this.confirmState;
+    if (!pending) return;
+    this.confirmState = null;
+    pending.resolve(ok);
+  }
+
   async remove(id: string) {
-    if (!confirm('이 할 일을 삭제할까요?')) return;
+    const task = this.tasks.find((t) => t.id === id);
+    if (!task) return;
+    const ok = await this.askConfirm(`“${task.title}” 할 일을 삭제할까요?`, '삭제');
+    if (!ok) return;
     try {
       await api.deleteTask(id);
       if (this.selectedId === id) this.selectedId = null;
