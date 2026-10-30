@@ -22,7 +22,18 @@ describe('acceleratorFromEvent', () => {
   it('supports function keys and digits', () => {
     expect(acceleratorFromEvent(ev('F1', { altKey: true }))).toBe('Alt+F1');
     expect(acceleratorFromEvent(ev('F12', { altKey: true }))).toBe('Alt+F12');
-    expect(acceleratorFromEvent(ev('Digit1', { ctrlKey: true }))).toBe('Ctrl+1');
+    expect(acceleratorFromEvent(ev('Digit1', { altKey: true, shiftKey: true }))).toBe('Alt+Shift+1');
+    expect(acceleratorFromEvent(ev('F5', { ctrlKey: true }))).toBe('Ctrl+F5');
+  });
+
+  it('requires two modifiers for letters, digits and Space', () => {
+    expect(acceleratorFromEvent(ev('KeyA', { shiftKey: true }))).toBeNull();
+    expect(acceleratorFromEvent(ev('KeyC', { ctrlKey: true }))).toBeNull();
+    expect(acceleratorFromEvent(ev('KeyF', { altKey: true }))).toBeNull();
+    expect(acceleratorFromEvent(ev('Digit1', { shiftKey: true }))).toBeNull();
+    expect(acceleratorFromEvent(ev('Space', { ctrlKey: true }))).toBeNull();
+    expect(acceleratorFromEvent(ev('Space', { ctrlKey: true, altKey: true }))).toBe('Ctrl+Alt+Space');
+    expect(acceleratorFromEvent(ev('KeyA', { ctrlKey: true, shiftKey: true }))).toBe('Ctrl+Shift+A');
   });
 
   it('returns null when only modifiers are pressed', () => {

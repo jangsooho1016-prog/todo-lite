@@ -113,7 +113,7 @@
       {/if}
     </div>
     {#if recording}
-      <p class="hint">Ctrl·Alt·Shift 중 하나 이상과 A–Z, 0–9, F1–F12, Space 중 하나를 함께 눌러 주세요.</p>
+      <p class="hint">글자·숫자·Space는 Ctrl·Alt·Shift 중 두 개 이상, F1–F12는 하나 이상과 함께 눌러 주세요.</p>
     {/if}
     {#if shortcut?.error}
       <p class="error-line">등록되지 않았어요: {shortcut.error}</p>

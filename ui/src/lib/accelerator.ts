@@ -23,6 +23,9 @@ export function acceleratorFromEvent(e: KeyLike): string | null {
   if (e.ctrlKey) parts.push('Ctrl');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
-  if (parts.length === 0) return null; // 수정자 없이는 타이핑을 가로채게 된다
+  // 수정자 없이는 타이핑을 가로채게 된다. 글자·숫자·Space는 수정자 하나로도 흔한 입력(Shift+A, Ctrl+C)을
+  // 가로채므로 두 개 이상을 요구하고, F1–F12는 하나면 된다.
+  const isFunctionKey = /^F\d+$/.test(key);
+  if (parts.length < (isFunctionKey ? 1 : 2)) return null;
   return [...parts, key].join('+');
 }

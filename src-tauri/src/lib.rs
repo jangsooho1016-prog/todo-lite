@@ -98,10 +98,20 @@ pub fn run() {
             let stored = api
                 .quick_shortcut()
                 .unwrap_or_else(|_| shortcut::DEFAULT_SHORTCUT.to_string());
-            let error = shortcut::register(app.handle(), &stored)
+            // 규칙이 바뀌어 더는 허용되지 않는 값이 저장돼 있으면 기본값으로 되돌린다.
+            let (current, notice) = shortcut::resolve_stored(&stored);
+            if notice.is_some() {
+                let _ = api.set_quick_shortcut(&current);
+            }
+            let register_error = shortcut::register(app.handle(), &current)
                 .err()
                 .map(|e| e.to_string());
-            app.manage(shortcut::ShortcutState::new(stored, error));
+            let error = match (notice, register_error) {
+                (Some(n), Some(e)) => Some(format!("{n} ({e})")),
+                (Some(n), None) => Some(n.to_string()),
+                (None, e) => e,
+            };
+            app.manage(shortcut::ShortcutState::new(current, error));
             app.manage(api);
             app.manage(Startup(started));
             app.manage(quick::QuickState::new());

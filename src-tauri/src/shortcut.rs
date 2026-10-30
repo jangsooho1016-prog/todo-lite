@@ -14,6 +14,7 @@ pub const DEFAULT_SHORTCUT: &str = "Ctrl+Alt+Space";
 pub enum ShortcutError {
     Empty,
     NoModifier,
+    TooFewModifiers,
     UnsupportedKey(String),
     Invalid(String),
     Taken(String),
@@ -26,6 +27,9 @@ impl fmt::Display for ShortcutError {
             ShortcutError::NoModifier => {
                 f.write_str("Ctrl·Alt·Shift 중 하나 이상을 함께 눌러 주세요")
             }
+            ShortcutError::TooFewModifiers => f.write_str(
+                "글자·숫자·Space 키에는 Ctrl·Alt·Shift 중 두 개 이상을 함께 눌러 주세요",
+            ),
             ShortcutError::UnsupportedKey(k) => write!(f, "지원하지 않는 키예요: {k}"),
             ShortcutError::Invalid(s) => write!(f, "단축키 형식이 올바르지 않아요: {s}"),
             ShortcutError::Taken(s) => write!(
@@ -92,6 +96,12 @@ pub fn normalize(input: &str) -> Result<String, ShortcutError> {
         return Err(ShortcutError::NoModifier);
     }
     let key = key.ok_or_else(|| ShortcutError::Invalid(trimmed.to_string()))?;
+    // 글자·숫자·Space는 수정자 하나로는 Shift+A, Ctrl+C 같은 흔한 입력을 시스템 전체에서 가로챈다.
+    let is_function_key = key.starts_with('F') && key.len() > 1;
+    let modifiers = [ctrl, alt, shift].into_iter().filter(|&m| m).count();
+    if !is_function_key && modifiers < 2 {
+        return Err(ShortcutError::TooFewModifiers);
+    }
     let mut parts = Vec::with_capacity(4);
     if ctrl {
         parts.push("Ctrl");
@@ -104,6 +114,18 @@ pub fn normalize(input: &str) -> Result<String, ShortcutError> {
     }
     parts.push(&key);
     Ok(parts.join("+"))
+}
+
+/// 저장돼 있던 값이 지금 규칙으로는 쓸 수 없을 때 사용자에게 알리는 말.
+pub const STORED_REJECTED: &str = "저장된 단축키가 더 이상 허용되지 않아 기본값으로 바꿨어요";
+
+/// 시작할 때 저장된 값을 표준 표기로 바꾼다. 규칙이 바뀌어 더는 허용되지 않는 값이면
+/// 기본값과 그 사실을 알리는 말을 돌려준다.
+pub fn resolve_stored(stored: &str) -> (String, Option<&'static str>) {
+    match normalize(stored) {
+        Ok(canonical) => (canonical, None),
+        Err(_) => (DEFAULT_SHORTCUT.to_string(), Some(STORED_REJECTED)),
+    }
 }
 
 /// 표준 표기를 플러그인의 `Shortcut`으로 바꾼다. `global-hotkey`의 `FromStr`가
@@ -159,7 +181,7 @@ mod tests {
         assert_eq!(normalize(" ctrl + alt + space ").unwrap(), "Ctrl+Alt+Space");
         assert_eq!(normalize("shift+ctrl+a").unwrap(), "Ctrl+Shift+A");
         assert_eq!(normalize("Alt+F1").unwrap(), "Alt+F1");
-        assert_eq!(normalize("Ctrl+1").unwrap(), "Ctrl+1");
+        assert_eq!(normalize("Alt+shift+1").unwrap(), "Alt+Shift+1");
         assert_eq!(normalize("control+shift+f12").unwrap(), "Ctrl+Shift+F12");
         assert_eq!(normalize(DEFAULT_SHORTCUT).unwrap(), DEFAULT_SHORTCUT);
     }
@@ -170,6 +192,25 @@ mod tests {
         assert!(matches!(normalize("   "), Err(ShortcutError::Empty)));
         assert!(matches!(normalize("A"), Err(ShortcutError::NoModifier)));
         assert!(matches!(normalize("F5"), Err(ShortcutError::NoModifier)));
+    }
+
+    #[test]
+    fn normalize_requires_two_modifiers_for_letters_digits_and_space() {
+        for s in ["Shift+A", "Ctrl+C", "Alt+F", "Shift+1", "Ctrl+Space"] {
+            assert!(
+                matches!(normalize(s), Err(ShortcutError::TooFewModifiers)),
+                "{s}"
+            );
+        }
+        for s in [
+            "Ctrl+Alt+Space",
+            "Ctrl+Shift+A",
+            "Alt+Shift+1",
+            "Alt+F1",
+            "Ctrl+F5",
+        ] {
+            assert_eq!(normalize(s).unwrap(), s);
+        }
     }
 
     #[test]
@@ -220,14 +261,33 @@ mod tests {
             "Ctrl·Alt·Shift 중 하나 이상을 함께 눌러 주세요"
         );
         assert_eq!(
+            ShortcutError::TooFewModifiers.to_string(),
+            "글자·숫자·Space 키에는 Ctrl·Alt·Shift 중 두 개 이상을 함께 눌러 주세요"
+        );
+        assert_eq!(
             ShortcutError::UnsupportedKey("Enter".into()).to_string(),
             "지원하지 않는 키예요: Enter"
         );
     }
 
     #[test]
+    fn resolve_stored_falls_back_to_default_when_no_longer_allowed() {
+        assert_eq!(
+            resolve_stored("shift+ctrl+a"),
+            ("Ctrl+Shift+A".to_string(), None)
+        );
+        for stored in ["Shift+1", "Ctrl+C", "garbage", "Ctrl+Enter"] {
+            assert_eq!(
+                resolve_stored(stored),
+                (DEFAULT_SHORTCUT.to_string(), Some(STORED_REJECTED)),
+                "{stored}"
+            );
+        }
+    }
+
+    #[test]
     fn to_plugin_accepts_supported_combinations() {
-        for s in [DEFAULT_SHORTCUT, "Ctrl+Shift+A", "Alt+F1", "Ctrl+1"] {
+        for s in [DEFAULT_SHORTCUT, "Ctrl+Shift+A", "Alt+F1", "Alt+Shift+1"] {
             assert!(to_plugin(s).is_ok(), "{s}");
         }
     }
