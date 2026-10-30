@@ -93,5 +93,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 .primary { background: var(--accent) !important; border-color: var(--accent) !important; color: #0b1020; }
 
 /* 토스트 */
-.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); }
+.toast { z-index: 50; position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); }
 .toast.error { border-color: var(--danger); color: var(--danger); bottom: 64px; }
+.backdrop.confirm-backdrop { z-index: 100; }
+.dialog.confirm { z-index: 101; width: min(360px, calc(100vw - 32px)); }
+.confirm-message { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.dialog.confirm .dialog-footer { gap: 8px; }
+.dialog-footer button.danger-solid { background: var(--danger); border-color: var(--danger); color: var(--bg); font-weight: 600; }
+.dialog-footer button.danger-solid:hover:not(:disabled) { filter: brightness(1.12); }
+.dialog-footer button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

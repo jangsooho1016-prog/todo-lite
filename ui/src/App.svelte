@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ConfirmDialog from './components/ConfirmDialog.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
   import QuickAdd from './components/QuickAdd.svelte';
   import Settings from './components/Settings.svelte';
@@ -21,6 +22,13 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (app.confirmState) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        app.answerConfirm(false);
+      }
+      return;
+    }
     if (settingsOpen) {
       if (e.key === 'Escape') settingsOpen = false;
       return;
@@ -101,6 +109,10 @@
 
 {#if settingsOpen}
   <Settings onclose={() => (settingsOpen = false)} />
+{/if}
+
+{#if app.confirmState}
+  <ConfirmDialog />
 {/if}
 
 {#if app.undo}
