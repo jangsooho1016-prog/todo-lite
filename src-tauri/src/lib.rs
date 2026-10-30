@@ -56,8 +56,14 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            (quick::LABEL, WindowEvent::Focused(false)) => {
-                quick::on_blur(window.app_handle());
+            (quick::LABEL, WindowEvent::Focused(focused)) => {
+                window
+                    .app_handle()
+                    .state::<quick::QuickState>()
+                    .set_focused(*focused);
+                if !*focused {
+                    quick::on_blur(window.app_handle());
+                }
             }
             _ => {}
         })
