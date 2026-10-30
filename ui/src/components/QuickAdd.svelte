@@ -1,8 +1,36 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { formatDue, todayIso } from '../lib/format';
-  import { app } from '../lib/state.svelte';
   import type { ParsedTask } from '../lib/types';
+  import { onMount } from 'svelte';
+
+  let {
+    submit,
+    inputId = 'quick-add-input',
+    autofocus = false,
+    oninput: onchange,
+  }: {
+    /** 저장을 시도한다. 저장됐으면 true. 실패하면 입력을 되돌린다. */
+    submit: (text: string) => Promise<boolean>;
+    inputId?: string;
+    autofocus?: boolean;
+    /** 사용자가 입력을 바꿀 때마다 불린다. */
+    oninput?: () => void;
+  } = $props();
+
+  let inputEl = $state<HTMLInputElement | null>(null);
+
+  onMount(() => {
+    if (autofocus) inputEl?.focus();
+  });
+
+  /** 입력을 비우고 입력칸에 포커스를 준다. */
+  export function reset() {
+    seq++;
+    text = '';
+    parsed = null;
+    inputEl?.focus();
+  }
 
   let text = $state('');
   let parsed = $state<ParsedTask | null>(null);
@@ -11,6 +39,7 @@
   const due = $derived(parsed ? formatDue(parsed.due_date, parsed.due_time, todayIso()) : '');
 
   async function onInput() {
+    onchange?.();
     const mine = ++seq;
     if (!text.trim()) {
       parsed = null;
@@ -39,8 +68,8 @@
     parsed = null;
     seq++;
     try {
-      const task = await app.addFromInput(value);
-      if (!task && !text) {
+      const saved = await submit(value);
+      if (!saved && !text) {
         text = value; // 실패하면 입력을 잃지 않게 되돌린다
         void onInput();
       }
@@ -52,7 +81,8 @@
 
 <div class="quick-add">
   <input
-    id="quick-add-input"
+    id={inputId}
+    bind:this={inputEl}
     type="text"
     placeholder="예: 내일 3시 회의 #학교 !중요"
     title="Ctrl+N으로 바로 입력"

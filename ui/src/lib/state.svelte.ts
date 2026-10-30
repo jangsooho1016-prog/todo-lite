@@ -91,6 +91,12 @@ class AppState {
     }
   }
 
+  /** 다른 창(빠른 입력창)이 데이터를 바꿨을 때. */
+  onExternalChange() {
+    void this.refresh();
+    this.scheduleSync();
+  }
+
   toggleDoneOpen() {
     this.doneOpen = !this.doneOpen;
     if (!this.doneOpen && this.selectedId && !this.navTasks.some((t) => t.id === this.selectedId)) {

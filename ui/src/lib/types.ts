@@ -50,3 +50,8 @@ export interface SyncStatus {
   applied: number;
   corrupt_lines: number;
 }
+
+export interface ShortcutStatus {
+  current: string;
+  error: string | null;
+}

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { ListQuery, ParsedTask, SyncStatus, TagCount, Task, TaskEdit } from './types';
+import type { ListQuery, ParsedTask, ShortcutStatus, SyncStatus, TagCount, Task, TaskEdit } from './types';
 
 export const api = {
   preview: (input: string) => invoke<ParsedTask>('preview_input', { input }),
@@ -12,5 +12,11 @@ export const api = {
   syncFolder: () => invoke<string | null>('get_sync_folder'),
   setSyncFolder: (folder: string | null) => invoke<void>('set_sync_folder', { folder }),
   syncNow: () => invoke<SyncStatus>('sync_now'),
+  quickShortcut: () => invoke<ShortcutStatus>('get_quick_shortcut'),
+  setQuickShortcut: (shortcut: string) => invoke<ShortcutStatus>('set_quick_shortcut', { shortcut }),
+  autostart: () => invoke<boolean>('get_autostart'),
+  setAutostart: (enabled: boolean) => invoke<boolean>('set_autostart', { enabled }),
+  showQuick: () => invoke<void>('show_quick'),
+  hideQuick: () => invoke<void>('hide_quick'),
   ready: (marks: Record<string, number>) => invoke<void>('report_ready', { marks }),
 };

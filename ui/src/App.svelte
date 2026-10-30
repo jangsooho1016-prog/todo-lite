@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
   import DetailPanel from './components/DetailPanel.svelte';
@@ -13,6 +14,9 @@
 
   onMount(() => {
     void app.init();
+    // 빠른 입력창 등 다른 창이 할 일을 바꾸면 목록을 다시 불러온다.
+    const unlisten = listen('tasks-changed', () => app.onExternalChange());
+    return () => void unlisten.then((fn) => fn());
   });
 
   function focusById(id: string) {
@@ -82,7 +86,7 @@
 
   <main class="center">
     <header class="topbar">
-      <QuickAdd />
+      <QuickAdd submit={async (t) => !!(await app.addFromInput(t))} />
       <input
         id="search-input"
         class="search"
