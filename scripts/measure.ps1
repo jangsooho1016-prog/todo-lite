@@ -43,7 +43,7 @@ $wsPrivate = ($perf | Measure-Object WorkingSetPrivate -Sum).Sum
 
 '--- 시작 시간 ---'
 $ready = Select-String -Path $errFile -Pattern 'ready_ms=(\d+)' | Select-Object -First 1
-if ($ready) { 'ready_ms = {0} (목표 < 1000)' -f $ready.Matches[0].Groups[1].Value } else { 'ready_ms 출력을 찾지 못함 (stderr: ' + $errFile + ')' }
+if ($ready) { 'ready_ms = {0} (절대값 참고용. 목표는 빈 Tauri 앱 대비 +0.5초 이내)' -f $ready.Matches[0].Groups[1].Value } else { 'ready_ms 출력을 찾지 못함 (stderr: ' + $errFile + ')' }
 
 Stop-Process -Id $p.Id -Force
 Get-Process msedgewebview2 -ErrorAction SilentlyContinue |
