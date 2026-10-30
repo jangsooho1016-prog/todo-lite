@@ -1,4 +1,5 @@
 use tauri::{AppHandle, State};
+use tauri_plugin_autostart::ManagerExt;
 use todo_core::model::Task;
 use todo_core::query::TagCount;
 use todo_core::service::TaskEdit;
@@ -88,6 +89,27 @@ pub fn set_quick_shortcut(
     status.current = new;
     status.error = None;
     Ok(status.clone())
+}
+
+#[tauri::command(async)]
+pub fn get_autostart(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| format!("자동 실행 설정을 읽지 못했어요: {e}"))
+}
+
+#[tauri::command(async)]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let launch = app.autolaunch();
+    let result = if enabled {
+        launch.enable()
+    } else {
+        launch.disable()
+    };
+    result.map_err(|e| format!("자동 실행 설정을 바꾸지 못했어요: {e}"))?;
+    launch
+        .is_enabled()
+        .map_err(|e| format!("자동 실행 설정을 읽지 못했어요: {e}"))
 }
 
 /// 첫 화면이 그려진 뒤 프론트엔드가 부른다. 시작 시간 측정용.

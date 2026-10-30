@@ -1,11 +1,13 @@
 mod api;
 mod commands;
 mod shortcut;
+mod tray;
 
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 
 pub struct Startup(pub Instant);
 
@@ -19,10 +21,30 @@ pub fn run() {
             .map_or(0, |d| d.as_millis());
         eprintln!("t_run_start_epoch_ms={epoch}");
     }
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // 단일 인스턴스 플러그인은 가장 먼저 등록해야 한다. 데이터 폴더를 따로 지정한 격리 실행
+    // (측정·시연 스크립트)은 사용자의 실행 중인 앱과 나란히 돌 수 있도록 등록하지 않는다.
+    if std::env::var_os("TODO_LITE_DATA_DIR").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main(app);
+        }));
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         // Task 4: 이 플러그인에 `with_handler`로 빠른 입력창 토글을 연결한다.
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .on_page_load(move |webview, payload| {
             if timing {
                 let name = match payload.event() {
@@ -63,9 +85,12 @@ pub fn run() {
             if timing {
                 eprintln!("t_setup_done_ms={}", started.elapsed().as_millis());
             }
-            // 임시: 메인 창이 숨김 상태로 만들어지므로 이후 작업에서 `--minimized` 처리로 대체할 때까지 바로 보여 준다.
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
+            tray::create(app.handle())?;
+            // 메인 창은 숨김 상태로 만들어진다. 자동 실행(`--minimized`)이 아니면 보여 준다.
+            if !std::env::args().any(|a| a == "--minimized") {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
             }
             Ok(())
         })
@@ -82,6 +107,8 @@ pub fn run() {
             commands::sync_now,
             commands::get_quick_shortcut,
             commands::set_quick_shortcut,
+            commands::get_autostart,
+            commands::set_autostart,
             commands::report_ready,
         ])
         .run(tauri::generate_context!())
