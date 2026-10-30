@@ -33,6 +33,20 @@ public static class SmokeWin {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint action, uint param, out RECT r, uint winIni);
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] static extern uint GetDpiForSystem();
+
+    // 실제 픽셀 좌표를 얻도록 이 스크립트 프로세스를 DPI 인식으로 만든다. 시스템 DPI 배율(1.0 = 96dpi)을 돌려준다.
+    public static double DpiAware() {
+        SetProcessDPIAware();
+        try { return GetDpiForSystem() / 96.0; } catch { return 1.0; }
+    }
+    // 주 모니터의 작업 영역(작업 표시줄 제외): L,T,W,H
+    public static int[] PrimaryWorkArea() {
+        RECT r; SystemParametersInfo(0x0030, 0, out r, 0); // SPI_GETWORKAREA
+        return new int[] { r.L, r.T, r.R - r.L, r.B - r.T };
+    }
 
     // 제목이 정확히 title인 이 프로세스의 최상위 창. visibleOnly이면 보이는 창만.
     static IntPtr Find(uint pid, string title, bool visibleOnly) {
@@ -81,6 +95,8 @@ public static class SmokeWin {
 '@
 }
 
+$dpiScale = [SmokeWin]::DpiAware()
+
 $script:total = 0
 $script:failed = 0
 function Check([string]$name, [bool]$ok) {
@@ -119,6 +135,25 @@ try {
     Check "빠른 창 '$QuickTitle' 보임" ([SmokeWin]::IsVisible($procId, $QuickTitle))
     Check '트레이 창(tray_icon_app) 있음' ([SmokeWin]::HasClass($procId, 'tray_icon_app'))
     Check '전역 단축키 창(global_hotkey_app) 있음' ([SmokeWin]::HasClass($procId, 'global_hotkey_app'))
+
+    # 빠른 창 위치: 커서가 있는 모니터의 작업 영역 아래쪽 가운데. 주 모니터에 뜬 경우에만 검사한다.
+    '--- 빠른 창 위치'
+    $qr = [SmokeWin]::Rect($procId, $QuickTitle)
+    $wa = [SmokeWin]::PrimaryWorkArea()
+    if ($qr) {
+        $winL = $qr[0]; $winR = $qr[0] + $qr[2]; $winB = $qr[1] + $qr[3]
+        $workL = $wa[0]; $workR = $wa[0] + $wa[2]; $workB = $wa[1] + $wa[3]
+        $dx = (($winL + $winR) / 2.0) - (($workL + $workR) / 2.0)
+        $gap = $workB - $winB
+        $maxGap = 60 * $dpiScale
+        '창 rect(L,T,W,H)={0}  주 모니터 작업 영역(L,T,W,H)={1}  dpi_scale={2}' -f ($qr -join ','), ($wa -join ','), $dpiScale
+        '창 중앙 x 차이={0:N1}px  작업 영역 아래와의 간격={1}px (허용 1..{2:N0})' -f $dx, $gap, $maxGap
+        if ($winL -ge $workL -and $winR -le $workR) {
+            Check '빠른 창이 작업 영역 아래쪽 가운데에 있음' (([Math]::Abs($dx) -le 3) -and ($gap -ge 1) -and ($gap -le $maxGap))
+        } else {
+            'SKIP 다른 모니터에 표시됨'
+        }
+    } else { Check '빠른 창 위치를 읽음' $false }
 
     if ($Shot) {
         $rect = [SmokeWin]::Rect($procId, $QuickTitle)
