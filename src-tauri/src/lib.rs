@@ -51,6 +51,10 @@ pub fn run() {
             if timing {
                 eprintln!("t_setup_done_ms={}", started.elapsed().as_millis());
             }
+            // 임시: 메인 창이 숨김 상태로 만들어지므로 이후 작업에서 `--minimized` 처리로 대체할 때까지 바로 보여 준다.
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
