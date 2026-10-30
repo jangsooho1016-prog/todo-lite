@@ -1,5 +1,6 @@
 mod api;
 mod commands;
+mod quick;
 mod shortcut;
 mod tray;
 
@@ -8,6 +9,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_global_shortcut::ShortcutState as KeyState;
 
 pub struct Startup(pub Instant);
 
@@ -35,15 +37,29 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
-        // Task 4: 이 플러그인에 `with_handler`로 빠른 입력창 토글을 연결한다.
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .on_window_event(|window, event| {
-            if window.label() == "main" {
-                if let WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+        // 우리가 등록하는 단축키는 하나뿐이므로 어떤 단축키든 빠른 입력창을 토글한다.
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == KeyState::Pressed {
+                        quick::toggle(app);
+                    }
+                })
+                .build(),
+        )
+        .on_window_event(|window, event| match (window.label(), event) {
+            ("main", WindowEvent::CloseRequested { api, .. }) => {
+                api.prevent_close();
+                let _ = window.hide();
             }
+            (quick::LABEL, WindowEvent::CloseRequested { api, .. }) => {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            (quick::LABEL, WindowEvent::Focused(false)) => {
+                quick::on_blur(window.app_handle());
+            }
+            _ => {}
         })
         .on_page_load(move |webview, payload| {
             if timing {
@@ -82,10 +98,19 @@ pub fn run() {
             app.manage(shortcut::ShortcutState::new(stored, error));
             app.manage(api);
             app.manage(Startup(started));
+            app.manage(quick::QuickState::new());
             if timing {
                 eprintln!("t_setup_done_ms={}", started.elapsed().as_millis());
             }
             tray::create(app.handle())?;
+            // 검증용: 키 입력을 흉내 내지 않고 빠른 입력창이 뜨는지 확인한다.
+            if std::env::var_os("TODO_LITE_AUTOTEST_QUICK").is_some() {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    quick::show(&handle);
+                });
+            }
             // 메인 창은 숨김 상태로 만들어진다. 자동 실행(`--minimized`)이 아니면 보여 준다.
             if !std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
@@ -107,6 +132,8 @@ pub fn run() {
             commands::sync_now,
             commands::get_quick_shortcut,
             commands::set_quick_shortcut,
+            commands::show_quick,
+            commands::hide_quick,
             commands::get_autostart,
             commands::set_autostart,
             commands::report_ready,

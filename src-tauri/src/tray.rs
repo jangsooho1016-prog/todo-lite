@@ -39,6 +39,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => show_main(app),
+            "quick" => crate::quick::show(app),
             "quit" => app.exit(0),
             _ => {}
         })

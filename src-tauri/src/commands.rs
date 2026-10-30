@@ -1,4 +1,4 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_autostart::ManagerExt;
 use todo_core::model::Task;
 use todo_core::query::TagCount;
@@ -15,8 +15,11 @@ pub fn preview_input(api: State<'_, Api>, input: String) -> ParsedDto {
 }
 
 #[tauri::command(async)]
-pub fn add_task(api: State<'_, Api>, input: String) -> Result<Task, ApiError> {
-    api.add_task(&input)
+pub fn add_task(app: AppHandle, api: State<'_, Api>, input: String) -> Result<Task, ApiError> {
+    let task = api.add_task(&input)?;
+    // 빠른 입력창에서 추가한 일정이 메인 창 목록에 바로 나타나도록 알린다.
+    let _ = app.emit("tasks-changed", ());
+    Ok(task)
 }
 
 #[tauri::command(async)]
@@ -89,6 +92,16 @@ pub fn set_quick_shortcut(
     status.current = new;
     status.error = None;
     Ok(status.clone())
+}
+
+#[tauri::command(async)]
+pub fn show_quick(app: AppHandle) {
+    crate::quick::show(&app);
+}
+
+#[tauri::command(async)]
+pub fn hide_quick(app: AppHandle) {
+    crate::quick::hide(&app);
 }
 
 #[tauri::command(async)]
