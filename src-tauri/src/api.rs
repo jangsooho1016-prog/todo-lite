@@ -14,6 +14,7 @@ use todo_core::Error;
 use uuid::Uuid;
 
 const KEY_SYNC_FOLDER: &str = "sync_folder";
+const KEY_QUICK_SHORTCUT: &str = "quick_shortcut";
 
 type Service = TodoService<SqliteStore, RuleBasedParser>;
 
@@ -191,6 +192,22 @@ impl Api {
         Ok(())
     }
 
+    /// 저장된 빠른 입력 단축키. 없거나 비어 있으면 기본값.
+    pub fn quick_shortcut(&self) -> Result<String, ApiError> {
+        let value = self.lock().store().meta_get(KEY_QUICK_SHORTCUT)?;
+        Ok(value
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| crate::shortcut::DEFAULT_SHORTCUT.to_string()))
+    }
+
+    /// 그대로 저장한다. 검증은 커맨드 계층(`shortcut::normalize`)에서 한다.
+    pub fn set_quick_shortcut(&self, canonical: &str) -> Result<(), ApiError> {
+        self.lock()
+            .store()
+            .meta_set(KEY_QUICK_SHORTCUT, canonical)?;
+        Ok(())
+    }
+
     /// 다른 기기의 변경을 먼저 가져오고, 이 기기의 변경을 내보낸다.
     pub fn sync_now(&self) -> Result<SyncStatus, ApiError> {
         let service = self.lock();
@@ -340,6 +357,27 @@ mod tests {
         assert_eq!(
             api.sync_folder().unwrap().as_deref(),
             Some(good_path.as_str())
+        );
+    }
+
+    #[test]
+    fn quick_shortcut_defaults_when_unset() {
+        let api = api();
+        assert_eq!(
+            api.quick_shortcut().unwrap(),
+            crate::shortcut::DEFAULT_SHORTCUT
+        );
+    }
+
+    #[test]
+    fn quick_shortcut_set_then_get_roundtrip() {
+        let api = api();
+        api.set_quick_shortcut("Ctrl+Shift+A").unwrap();
+        assert_eq!(api.quick_shortcut().unwrap(), "Ctrl+Shift+A");
+        api.set_quick_shortcut("").unwrap();
+        assert_eq!(
+            api.quick_shortcut().unwrap(),
+            crate::shortcut::DEFAULT_SHORTCUT
         );
     }
 

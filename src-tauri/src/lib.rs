@@ -1,5 +1,6 @@
 mod api;
 mod commands;
+mod shortcut;
 
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -20,6 +21,8 @@ pub fn run() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Task 4: 이 플러그인에 `with_handler`로 빠른 입력창 토글을 연결한다.
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_page_load(move |webview, payload| {
             if timing {
                 let name = match payload.event() {
@@ -43,10 +46,19 @@ pub fn run() {
             if timing {
                 eprintln!("t_data_dir_ms={}", started.elapsed().as_millis());
             }
-            app.manage(api::Api::open(&dir.join("todo.db"))?);
+            let api = api::Api::open(&dir.join("todo.db"))?;
             if timing {
                 eprintln!("t_db_open_ms={}", started.elapsed().as_millis());
             }
+            // 단축키 등록 실패(다른 프로그램과 충돌 등)는 치명적이지 않다. 이유만 기록해 둔다.
+            let stored = api
+                .quick_shortcut()
+                .unwrap_or_else(|_| shortcut::DEFAULT_SHORTCUT.to_string());
+            let error = shortcut::register(app.handle(), &stored)
+                .err()
+                .map(|e| e.to_string());
+            app.manage(shortcut::ShortcutState::new(stored, error));
+            app.manage(api);
             app.manage(Startup(started));
             if timing {
                 eprintln!("t_setup_done_ms={}", started.elapsed().as_millis());
@@ -68,6 +80,8 @@ pub fn run() {
             commands::get_sync_folder,
             commands::set_sync_folder,
             commands::sync_now,
+            commands::get_quick_shortcut,
+            commands::set_quick_shortcut,
             commands::report_ready,
         ])
         .run(tauri::generate_context!())
