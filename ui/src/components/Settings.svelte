@@ -112,6 +112,9 @@
         <span class="hint">불러오는 중…</span>
       {/if}
     </div>
+    {#if recording}
+      <p class="hint">Ctrl·Alt·Shift 중 하나 이상과 A–Z, 0–9, F1–F12, Space 중 하나를 함께 눌러 주세요.</p>
+    {/if}
     {#if shortcut?.error}
       <p class="error-line">등록되지 않았어요: {shortcut.error}</p>
       <p class="hint">트레이 메뉴의 “빠른 추가”는 그대로 쓸 수 있어요.</p>
@@ -132,7 +135,7 @@
         disabled={autostartBusy}
         onchange={(e) => toggleAutostart(e.currentTarget.checked)}
       />
-      <span>Windows 시작 시 자동 실행</span>
+      <span>사용</span>
     </label>
     <p class="hint">켜면 로그인할 때 창 없이 트레이로 시작해요. 설치한 앱에서 켜 주세요.</p>
     {#if autostartError}<p class="error-line">{autostartError}</p>{/if}
